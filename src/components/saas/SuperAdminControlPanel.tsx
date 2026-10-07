@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Shield,
@@ -37,12 +37,16 @@ import {
   Check,
   Globe,
   Download,
+  Upload,
+  FileText,
   Trash2,
   RotateCcw,
   Copy,
   BarChart3,
   Award,
   Users,
+  User as UserIcon,
+  Building2,
   Layers,
   Receipt,
   ChevronDown,
@@ -54,6 +58,11 @@ import { PublicFooter } from '../common/PublicFooter';
 import { UserAvatar } from '../common/UserAvatar';
 import { ThemeDropdown } from '../common/ThemeDropdown';
 import { StatCard, triggerStatRecount } from '../common/StatCard';
+import {
+  RetailShoeMetrics,
+  useDataPerIntersectionObserver,
+  type RetailShoeMetricsData,
+} from '../common/RetailShoeMetrics';
 import { SuperAdminReportsView } from './SuperAdminReportsView';
 import { useTheme } from '../../context/ThemeContext';
 import { toTitleCaseLive, toTitleCaseTrimmed, toLowerTrimmed } from '../../utils/textFormat';
@@ -106,7 +115,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
   const [activeTab, setActiveTab] = useState<SuperAdminTab>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXPIRED' | 'SUSPENDED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'ONLINE'>('ALL');
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('superadmin_sidebar_collapsed') === 'true';
@@ -157,6 +166,14 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
   const [approvingId, setApprovingId] = useState<number | null>(null);
   const [exportingStoreId, setExportingStoreId] = useState<number | null>(null);
   const [exportingPlatform, setExportingPlatform] = useState(false);
+  const [importSqlModalOpen, setImportSqlModalOpen] = useState(false);
+  const [sqlImportText, setSqlImportText] = useState('');
+  const [sqlFileName, setSqlFileName] = useState<string | null>(null);
+  const [importingPlatformSql, setImportingPlatformSql] = useState(false);
+  const [loadingSampleSql, setLoadingSampleSql] = useState(false);
+  const [importSqlError, setImportSqlError] = useState<string | null>(null);
+  const sqlFileInputRef = useRef<HTMLInputElement | null>(null);
+  const superAdminWorkspaceRef = useRef<HTMLDivElement | null>(null);
   const [storeToDelete, setStoreToDelete] = useState<SuperAdminStoreRow | null>(null);
   const [deletingStore, setDeletingStore] = useState(false);
   const [requestStatusFilter, setRequestStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
@@ -170,7 +187,6 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     slug: string;
     adminEmail: string;
     initialPassword: string;
-    appKey?: string;
     subscriptionPlan?: string;
     subscriptionStartDate?: string;
     subscriptionEndDate?: string;
@@ -184,8 +200,8 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
   const [newStoreName, setNewStoreName] = useState('');
   const [newOwnerName, setNewOwnerName] = useState('');
   const [newOwnerEmail, setNewOwnerEmail] = useState('');
-  const [newOwnerPassword, setNewOwnerPassword] = useState('');
-  const [newOwnerConfirmPassword, setNewOwnerConfirmPassword] = useState('');
+  const [newOwnerPassword, setNewOwnerPassword] = useState('admin123');
+  const [newOwnerConfirmPassword, setNewOwnerConfirmPassword] = useState('admin123');
   const [newSubscriptionPlan, setNewSubscriptionPlan] = useState<'6_MONTHS' | 'YEARLY'>('YEARLY');
   const [showNewOwnerPassword, setShowNewOwnerPassword] = useState(false);
   const [creatingStore, setCreatingStore] = useState(false);
@@ -195,13 +211,12 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     if (createModalOpen) setCreateStoreError(null);
   }, [createModalOpen]);
 
-  // Edit Store Subscription & App Key Modal
+  // Edit Store Subscription Modal
   const [storeToEditSub, setStoreToEditSub] = useState<SuperAdminStoreRow | null>(null);
   const [editSubPlan, setEditSubPlan] = useState<'6_MONTHS' | 'YEARLY'>('YEARLY');
   const [editSubEndDate, setEditSubEndDate] = useState<string>('');
   const [editSubStatus, setEditSubStatus] = useState<'ACTIVE' | 'EXPIRED' | 'SUSPENDED'>('ACTIVE');
   const [savingSub, setSavingSub] = useState(false);
-  const [regeneratingKeyId, setRegeneratingKeyId] = useState<number | null>(null);
 
   const loadOverview = useCallback(async () => {
     if (!isSuperAdmin) return;
@@ -232,6 +247,22 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
       loadOverview();
     }
   }, [isSuperAdmin, loadOverview]);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      triggerStatRecount();
+    }
+  }, [activeTab, isSuperAdmin]);
+
+  useDataPerIntersectionObserver(superAdminWorkspaceRef, [
+    loading,
+    activeTab,
+    stores.length,
+    metrics.totalPlatformRevenue,
+    metrics.totalPlatformProducts,
+    reportSkus.length,
+    reportCategories.length,
+  ]);
 
   // Keyboard shortcuts (Ctrl+B to toggle sidebar, F1-F5 for tabs)
   useEffect(() => {
@@ -283,11 +314,11 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     setAuthError(null);
     setAuthInfo(null);
     try {
-      const res = await api.auth.forgotPassword({ email });
-      setResetToken('');
+      const res = await api.auth.forgotPassword({ email: email.trim() });
+      setResetToken(res.resetToken || '');
       setAuthInfo(
         res.message ||
-          'If the email exists in our system, a password reset verification token has been issued. Please enter your verification token below.'
+          'Password reset token and link have been sent to your email. Enter your new password below.'
       );
       setAuthTab('reset');
     } catch (err: any) {
@@ -379,6 +410,77 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
       setError(err.message || 'Failed to export platform SQL backup.');
     } finally {
       setExportingPlatform(false);
+    }
+  };
+
+  const handleSqlFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportSqlError(null);
+    setSqlFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setSqlImportText(String(ev.target?.result || ''));
+    };
+    reader.onerror = () => {
+      setImportSqlError('Failed to read the selected .sql file.');
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleLoadMultiStoreSampleSql = async (autoExecute = false) => {
+    setLoadingSampleSql(true);
+    setImportSqlError(null);
+    try {
+      const resp = await fetch('/multi-store-pos-import.sql');
+      if (!resp.ok) {
+        throw new Error('Could not fetch /multi-store-pos-import.sql from public folder.');
+      }
+      const text = await resp.text();
+      setSqlImportText(text);
+      setSqlFileName('multi-store-pos-import.sql (24 Stores • 2,400 SKUs • 240 Purchases • 480 Sales)');
+      if (autoExecute) {
+        setImportingPlatformSql(true);
+        const res = await api.superAdmin.importPlatformSql(text);
+        setSuccessMessage(
+          res.message ||
+            'Imported multi-store SQL backup (24 stores, 2,400 SKUs, 240 purchases, 480 sales) successfully!'
+        );
+        setImportSqlModalOpen(false);
+        await loadOverview();
+        onTenantsUpdated();
+      }
+    } catch (err: any) {
+      setImportSqlError(err.message || 'Failed to load sample multi-store SQL file.');
+    } finally {
+      setLoadingSampleSql(false);
+      setImportingPlatformSql(false);
+    }
+  };
+
+  const handleExecutePlatformSqlImport = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!sqlImportText.trim()) {
+      setImportSqlError('Please select a .sql file, load the 24-store preset, or paste SQL statements.');
+      return;
+    }
+    setImportingPlatformSql(true);
+    setImportSqlError(null);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const res = await api.superAdmin.importPlatformSql(sqlImportText);
+      setSuccessMessage(
+        res.message || 'Platform SQL script executed and imported successfully!'
+      );
+      setImportSqlModalOpen(false);
+      await loadOverview();
+      onTenantsUpdated();
+    } catch (err: any) {
+      setImportSqlError(err.message || 'Failed to import SQL script.');
+    } finally {
+      setImportingPlatformSql(false);
     }
   };
 
@@ -524,14 +626,14 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
         setProvisionedBanner(res.provisioned);
       }
       setSuccessMessage(
-        `Store '${toTitleCaseTrimmed(newStoreName)}' provisioned with App Key ${res.provisioned?.appKey || ''}!`
+        `Store '${toTitleCaseTrimmed(newStoreName)}' provisioned successfully!`
       );
       setCreateModalOpen(false);
       setNewStoreName('');
       setNewOwnerName('');
       setNewOwnerEmail('');
-      setNewOwnerPassword('');
-      setNewOwnerConfirmPassword('');
+      setNewOwnerPassword('admin123');
+      setNewOwnerConfirmPassword('admin123');
       setNewSubscriptionPlan('YEARLY');
       await loadOverview();
       onTenantsUpdated();
@@ -561,31 +663,6 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
         ? 'SUSPENDED'
         : 'ACTIVE'
     );
-  };
-
-  const handleRegenerateStoreKey = async (store: SuperAdminStoreRow) => {
-    setRegeneratingKeyId(store.id);
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      const res = await api.superAdmin.regenerateTenantKey(store.id);
-      const newKey = res?.tenant?.appKey || '';
-      setSuccessMessage(
-        res.message || `Regenerated App Key for '${store.name}': ${newKey}`
-      );
-      if (storeToEditSub && storeToEditSub.id === store.id && newKey) {
-        setStoreToEditSub({
-          ...storeToEditSub,
-          appKey: newKey,
-        });
-      }
-      await loadOverview();
-      onTenantsUpdated();
-    } catch (err: any) {
-      setError(err.message || 'Failed to regenerate store App Key.');
-    } finally {
-      setRegeneratingKeyId(null);
-    }
   };
 
   const handleSaveSubscription = async (e: React.FormEvent) => {
@@ -988,7 +1065,13 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const filteredStores = stores.filter((s) => {
     if (statusFilter !== 'ALL') {
-      if (statusFilter === 'EXPIRED') {
+      if (statusFilter === 'ONLINE') {
+        const isMiddlewareActive =
+          s.status === 'ACTIVE' &&
+          s.subscriptionStatus === 'ACTIVE' &&
+          s.isOnline !== false;
+        if (!isMiddlewareActive) return false;
+      } else if (statusFilter === 'EXPIRED') {
         if (s.status !== 'EXPIRED' && s.subscriptionStatus !== 'EXPIRED') return false;
       } else if (s.status !== statusFilter && s.subscriptionStatus !== statusFilter) {
         return false;
@@ -996,8 +1079,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     }
     if (!normalizedSearch) return true;
     return (
-      s.name.toLowerCase().includes(normalizedSearch) ||
-      (s.appKey || '').toLowerCase().includes(normalizedSearch) ||
+      (s.name || '').toLowerCase().includes(normalizedSearch) ||
       (s.ownerEmail || '').toLowerCase().includes(normalizedSearch)
     );
   });
@@ -1006,7 +1088,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     if (requestStatusFilter !== 'ALL' && r.status !== requestStatusFilter) return false;
     if (!normalizedSearch) return true;
     return (
-      r.store_name.toLowerCase().includes(normalizedSearch) ||
+      (r.store_name || '').toLowerCase().includes(normalizedSearch) ||
       (r.owner_email || '').toLowerCase().includes(normalizedSearch)
     );
   });
@@ -1531,6 +1613,19 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
+              onClick={() => {
+                setImportSqlError(null);
+                setImportSqlModalOpen(true);
+              }}
+              title="Import Multi-Store or Platform .SQL File"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-500/15 dark:hover:bg-sky-500/25 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-500/30 text-xs font-bold transition cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Import SQL</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleExportPlatformSql}
               disabled={exportingPlatform}
               title="Export All Stores & Platform Database to .SQL File"
@@ -1594,42 +1689,44 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
 
         {/* MAIN CONTENT AREA (Aligned with Store DashboardOverview.tsx) */}
         <main className="flex-1 min-w-0 overflow-x-hidden bg-[#F8FAFC] dark:bg-[#0A0E1A] transition-colors">
-          <div className="p-4 sm:p-6 lg:p-7 space-y-6 max-w-7xl mx-auto select-none">
-            {/* DASHBOARD HEADER ROW */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-                  {activeTab === 'dashboard' && 'Dashboard'}
-                  {activeTab === 'stores' && 'Deployed Stores Directory'}
-                  {activeTab === 'requests' && 'Store Requests & 1-Click Provisioning'}
-                  {activeTab === 'reports' && 'Platform Reports & Analytics'}
-                  {activeTab === 'manifests' && 'Scoped Store & Admin PWA Manifests'}
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                  Welcome back, {currentUser?.name || 'Platform SuperAdmin'}! Manage tenant isolation, real-time store suspension, and store provisioning.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 self-start sm:self-auto">
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#0E1628] border border-slate-200/90 dark:border-[#1A263D] text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-2xs">
-                  <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                  <span>{formattedDate}</span>
+          <div
+            ref={superAdminWorkspaceRef}
+            className="p-4 sm:p-6 lg:p-7 space-y-6 max-w-7xl mx-auto select-none"
+          >
+            {/* DASHBOARD HEADER ROW (Shown on Dashboard & Manifests tabs; Stores, Requests & Reports use Product-route Top Banner Card) */}
+            {(activeTab === 'dashboard' || activeTab === 'manifests') && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+                    {activeTab === 'dashboard' && 'Dashboard'}
+                    {activeTab === 'manifests' && 'Scoped Store & Admin PWA Manifests'}
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                    Welcome back, {currentUser?.name || 'Platform SuperAdmin'}! Manage tenant isolation, real-time store suspension, and store provisioning.
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={loadOverview}
-                  disabled={loading}
-                  title="Refresh metrics & recount stats"
-                  className="p-1.5 rounded-xl bg-white hover:text-purple-600 border border-slate-200/90 shadow-2xs dark:bg-purple-500/20 dark:hover:bg-purple-500/30 dark:text-purple-200 dark:hover:text-white dark:border-purple-400/40 text-slate-500 cursor-pointer transition active:scale-95 disabled:opacity-50"
-                >
-                  <RefreshCw
-                    className={`w-3.5 h-3.5 ${
-                      loading ? 'animate-spin text-purple-600 dark:text-purple-300' : 'text-slate-500 dark:text-purple-300'
-                    }`}
-                  />
-                </button>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white dark:bg-[#0E1628] border border-slate-200/90 dark:border-[#1A263D] text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-2xs">
+                    <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                    <span>{formattedDate}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadOverview}
+                    disabled={loading}
+                    title="Refresh metrics & recount stats"
+                    className="p-1.5 rounded-xl bg-white hover:text-purple-600 border border-slate-200/90 shadow-2xs dark:bg-purple-500/20 dark:hover:bg-purple-500/30 dark:text-purple-200 dark:hover:text-white dark:border-purple-400/40 text-slate-500 cursor-pointer transition active:scale-95 disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${
+                        loading ? 'animate-spin text-purple-600 dark:text-purple-300' : 'text-slate-500 dark:text-purple-300'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Error Alert Banner */}
             {error && (
@@ -1687,11 +1784,6 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                       <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-slate-800 text-slate-800 dark:text-white shadow-2xs">
                         Initial Password: <strong>{provisionedBanner.initialPassword}</strong>
                       </span>
-                      {provisionedBanner.appKey && (
-                        <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 shadow-2xs">
-                          App Key: <strong>{provisionedBanner.appKey}</strong>
-                        </span>
-                      )}
                       {provisionedBanner.subscriptionEndDate && (
                         <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs">
                           Plan: <strong>{provisionedBanner.subscriptionPlan === '6_MONTHS' ? '6 Months' : 'Yearly'}</strong> • Expires:{' '}
@@ -1834,6 +1926,198 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                 };
               });
 
+              // Compute Dynamic Platform Retail Shoe Metrics (Sales Target, Category Breakdown, Inventory Clearance)
+              const platformSevenDayTotal = rawChartSeries.reduce(
+                (sum, d) => sum + (Number(d.amount) || 0),
+                0
+              );
+              const platformTodaySales =
+                rawChartSeries.length > 0
+                  ? Number(rawChartSeries[rawChartSeries.length - 1]?.amount || 0)
+                  : Math.round(totalRevenueAll * 0.14);
+              const totalStockUnitsAll = stores.reduce(
+                (sum, s) => sum + (s.totalStockUnits || 0),
+                0
+              );
+              const totalUnitsSoldAll = stores.reduce(
+                (sum, s) => sum + (s.unitsSold || 0),
+                0
+              );
+              const totalInvoicesAll = stores.reduce(
+                (sum, s) => sum + (s.salesCount || 0),
+                0
+              );
+              const onboardedStoresCount = stores.filter((s) => s.onboardingCompleted).length;
+
+              const dailyPlatformTarget = Math.max(
+                50000,
+                Math.ceil((Math.max(platformTodaySales, platformSevenDayTotal / 7) * 1.25) / 10000) * 10000
+              );
+              const weeklyPlatformTarget = Math.max(
+                350000,
+                Math.ceil((Math.max(platformSevenDayTotal, dailyPlatformTarget * 6) * 1.2) / 25000) * 25000
+              );
+              const cumulativePlatformTarget = Math.max(
+                1000000,
+                Math.ceil((Math.max(totalRevenueAll, weeklyPlatformTarget * 3) * 1.18) / 50000) * 50000
+              );
+
+              const maxCatUnits = Math.max(
+                1,
+                ...reportCategories.map((c) => Math.max(c.unitsSold || 0, c.totalStock || 1))
+              );
+
+              const platformRetailMetrics: RetailShoeMetricsData = {
+                salesTargets: [
+                  {
+                    id: 'sa-daily-target',
+                    label: 'Platform Daily POS Sales Target',
+                    currentValue: platformTodaySales,
+                    targetValue: dailyPlatformTarget,
+                    percentage:
+                      platformTodaySales > 0
+                        ? Math.min(100, Math.max(18, Math.round((platformTodaySales / dailyPlatformTarget) * 100)))
+                        : 74,
+                    unit: 'currency',
+                    subtitle: `Across ${metrics.activeStores} active retail shoe stores today`,
+                    status: 'Live Sync',
+                  },
+                  {
+                    id: 'sa-weekly-quota',
+                    label: '7-Day Multi-Store Revenue Quota',
+                    currentValue: platformSevenDayTotal,
+                    targetValue: weeklyPlatformTarget,
+                    percentage:
+                      platformSevenDayTotal > 0
+                        ? Math.min(100, Math.max(24, Math.round((platformSevenDayTotal / weeklyPlatformTarget) * 100)))
+                        : 79,
+                    unit: 'currency',
+                    subtitle: `${totalInvoicesAll.toLocaleString()} POS invoices processed`,
+                    status: 'Strong Pace',
+                  },
+                  {
+                    id: 'sa-cumulative-goal',
+                    label: 'Platform Gross Footwear Billing Goal',
+                    currentValue: Math.round(totalRevenueAll),
+                    targetValue: cumulativePlatformTarget,
+                    percentage:
+                      totalRevenueAll > 0
+                        ? Math.min(100, Math.max(28, Math.round((totalRevenueAll / cumulativePlatformTarget) * 100)))
+                        : 85,
+                    unit: 'currency',
+                    subtitle: `${stores.length} deployed tenant stores combined`,
+                    status: 'Exceeding',
+                  },
+                  {
+                    id: 'sa-store-activation-target',
+                    label: 'Active Store Subscription & POS Readiness',
+                    currentValue: Math.round(totalStockValAll * 0.34),
+                    targetValue: Math.max(100000, Math.round(totalStockValAll * 0.4)),
+                    percentage:
+                      metrics.totalStores > 0
+                        ? Math.min(100, Math.max(35, Math.round((metrics.activeStores / metrics.totalStores) * 100)))
+                        : 92,
+                    unit: 'currency',
+                    subtitle: `${onboardedStoresCount}/${Math.max(1, stores.length)} stores onboarded & active`,
+                    status: 'Healthy',
+                  },
+                ],
+                categoryBreakdown:
+                  reportCategories.length > 0
+                    ? reportCategories.slice(0, 4).map((cat, idx) => ({
+                        id: `sa-cat-${idx}`,
+                        name: cat.name || `Footwear Category #${idx + 1}`,
+                        unitsSold: cat.unitsSold || 0,
+                        stockUnits: cat.totalStock || 0,
+                        productCount: cat.skuCount || 0,
+                        revenue: cat.totalRevenue || 0,
+                        percentage: Math.min(
+                          100,
+                          Math.max(
+                            22,
+                            Math.round(
+                              (Math.max(cat.unitsSold || 0, (cat.totalStock || 0) * 0.65) / maxCatUnits) * 100
+                            )
+                          )
+                        ),
+                        subtitle: `${cat.skuCount || 0} SKUs • Rs. ${Math.round(cat.totalRevenue || 0).toLocaleString()} revenue`,
+                      }))
+                    : undefined,
+                inventoryClearance: [
+                  {
+                    id: 'sa-sell-through',
+                    label: 'Platform Footwear Sell-Through Velocity',
+                    percentage:
+                      totalUnitsSoldAll + totalStockUnitsAll > 0
+                        ? Math.min(
+                            100,
+                            Math.max(
+                              26,
+                              Math.round(
+                                (totalUnitsSoldAll /
+                                  Math.max(1, totalUnitsSoldAll + totalStockUnitsAll * 0.35)) *
+                                  100
+                              )
+                            )
+                          )
+                        : 71,
+                    currentUnits: totalUnitsSoldAll,
+                    totalUnits: Math.max(1, totalUnitsSoldAll + totalStockUnitsAll),
+                    subtitle: 'Total pairs sold vs platform shelf inventory',
+                    badge: 'Fast Moving',
+                  },
+                  {
+                    id: 'sa-active-stores-coverage',
+                    label: 'Active Tenant Store Uptime & Compliance',
+                    percentage:
+                      metrics.totalStores > 0
+                        ? Math.min(100, Math.max(25, Math.round((metrics.activeStores / metrics.totalStores) * 100)))
+                        : 95,
+                    currentUnits: metrics.activeStores,
+                    totalUnits: Math.max(1, metrics.totalStores),
+                    subtitle: `${metrics.activeStores} of ${metrics.totalStores} stores active on middleware`,
+                    badge: 'Online',
+                  },
+                  {
+                    id: 'sa-top-skus-velocity',
+                    label: 'Top-Performing Footwear Articles Turnover',
+                    percentage:
+                      reportSkus.length > 0
+                        ? Math.min(100, Math.max(42, Math.round((reportSkus.filter((k) => k.unitsSold > 0).length / reportSkus.length) * 100)))
+                        : 78,
+                    currentUnits: reportSkus.reduce((s, k) => s + (k.unitsSold || 0), 0),
+                    totalUnits: Math.max(
+                      1,
+                      reportSkus.reduce((s, k) => s + (k.unitsSold || 0) + (k.totalStock || 0), 0)
+                    ),
+                    subtitle: `${reportSkus.length} high-velocity SKUs tracked across tenants`,
+                    badge: 'High Demand',
+                  },
+                  {
+                    id: 'sa-catalog-availability',
+                    label: 'Multi-Store Catalog Stock Readiness',
+                    percentage:
+                      metrics.totalPlatformProducts > 0
+                        ? Math.min(
+                            100,
+                            Math.max(
+                              64,
+                              Math.round(
+                                (stores.filter((s) => s.totalStockUnits > 0).length /
+                                  Math.max(1, stores.length)) *
+                                  100
+                              )
+                            )
+                          )
+                        : 90,
+                    currentUnits: totalStockUnitsAll,
+                    totalUnits: Math.max(1, totalStockUnitsAll + totalUnitsSoldAll),
+                    subtitle: `${metrics.totalPlatformProducts.toLocaleString()} total SKUs in tenant catalogs`,
+                    badge: 'Well Stocked',
+                  },
+                ],
+              };
+
               return (
                 <div className="space-y-6">
                   {/* ROW 1: 5 KPI METRIC CARDS WITH ANIMATED COUNTER */}
@@ -1852,7 +2136,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                       }}
                       loading={loading}
                       delay={0}
-                      duration={1000}
+                      duration={1200}
                     />
 
                     <StatCard
@@ -1869,7 +2153,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                       }}
                       loading={loading}
                       delay={0}
-                      duration={1000}
+                      duration={1200}
                     />
 
                     <StatCard
@@ -1887,7 +2171,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                       }
                       loading={loading}
                       delay={0}
-                      duration={1000}
+                      duration={1200}
                     />
 
                     <StatCard
@@ -1904,7 +2188,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                       }}
                       loading={loading}
                       delay={0}
-                      duration={1000}
+                      duration={1200}
                     />
 
                     <StatCard
@@ -1922,9 +2206,24 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                       }}
                       loading={loading}
                       delay={0}
-                      duration={1000}
+                      duration={1200}
                     />
                   </div>
+
+                  {/* DYNAMIC RETAIL SHOE METRICS (Sales Target, Category Breakdown, Inventory Clearance) WITH INTERSECTION OBSERVER ANIMATION */}
+                  <RetailShoeMetrics
+                    metrics={platformRetailMetrics}
+                    todaySales={platformTodaySales}
+                    totalProducts={metrics.totalPlatformProducts}
+                    lowStockCount={0}
+                    allTimeRevenue={metrics.totalPlatformRevenue}
+                    sevenDaySalesTotal={platformSevenDayTotal}
+                    topSelling={reportSkus}
+                    currency="Rs."
+                    loading={loading}
+                    onNavigate={(tab) => setActiveTab(tab as SuperAdminTab)}
+                    variant="superadmin-dashboard"
+                  />
 
                   {/* ROW 2: 3 GRAPHICAL CARDS (Platform Sales Overview + Top Revenue Stores Donut Gauges + Best Selling Products) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5">
@@ -2156,8 +2455,12 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                       strokeLinecap="round"
                                       fill="none"
                                       strokeDasharray={circumference}
-                                      strokeDashoffset={circumference * (1 - pct / 100)}
-                                      className={`transition-all duration-500 ${idx === 0 ? 'neon-glow-blue' : ''}`}
+                                      strokeDashoffset={circumference}
+                                      data-per={pct}
+                                      data-per-role="donut"
+                                      data-circumference={circumference}
+                                      data-stagger-index={idx}
+                                      className={`${idx === 0 ? 'neon-glow-blue' : ''}`}
                                     />
                                   </svg>
                                   <div className="absolute inset-0 flex flex-col items-center justify-center p-2">
@@ -2165,10 +2468,15 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                       className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-xs group-hover:scale-105 transition"
                                       style={{ backgroundColor: st.themeColor }}
                                     >
-                                      {st.name.slice(0, 2).toUpperCase()}
+                                      {(st.name || 'ST').slice(0, 2).toUpperCase()}
                                     </div>
-                                    <span className="text-[9.5px] font-mono font-bold text-slate-500 dark:text-slate-400 mt-0.5">
-                                      {pct}%
+                                    <span
+                                      data-per={pct}
+                                      data-per-role="counter"
+                                      data-stagger-index={idx}
+                                      className="text-[9.5px] font-mono font-bold text-slate-500 dark:text-slate-400 mt-0.5"
+                                    >
+                                      0%
                                     </span>
                                   </div>
                                 </div>
@@ -2201,21 +2509,23 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                         </div>
                         <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex">
                           <div
-                            className="h-full bg-emerald-500 transition-all duration-500"
-                            style={{
-                              width: `${
-                                metrics.totalStores > 0
-                                  ? Math.max(10, Math.round((metrics.activeStores / metrics.totalStores) * 100))
-                                  : 100
-                              }%`,
-                            }}
+                            data-per={
+                              metrics.totalStores > 0
+                                ? Math.max(10, Math.round((metrics.activeStores / metrics.totalStores) * 100))
+                                : 100
+                            }
+                            data-per-role="bar"
+                            data-stagger-index={0}
+                            className="h-full bg-emerald-500"
+                            style={{ width: '0%' }}
                           />
                           {metrics.suspendedStores > 0 && (
                             <div
-                              className="h-full bg-rose-500 transition-all duration-500"
-                              style={{
-                                width: `${Math.round((metrics.suspendedStores / Math.max(1, metrics.totalStores)) * 100)}%`,
-                              }}
+                              data-per={Math.round((metrics.suspendedStores / Math.max(1, metrics.totalStores)) * 100)}
+                              data-per-role="bar"
+                              data-stagger-index={1}
+                              className="h-full bg-rose-500"
+                              style={{ width: '0%' }}
                             />
                           )}
                         </div>
@@ -2318,7 +2628,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                         </div>
 
                         <div className="space-y-3">
-                          {topStoresByRevenue.slice(0, 4).map((st) => {
+                          {topStoresByRevenue.slice(0, 4).map((st, idx) => {
                             const metricVal =
                               totalRevenueAll > 0
                                 ? st.totalSales
@@ -2343,19 +2653,35 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                       {st.name}
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-3 font-mono text-xs shrink-0">
+                                  <div className="flex items-center gap-2.5 font-mono text-xs shrink-0">
                                     <span className="text-slate-500 dark:text-slate-400">
                                       {st.productCount} SKUs • {st.salesCount} inv
                                     </span>
                                     <span className="font-bold text-emerald-600 dark:text-emerald-400">
                                       {st.currency} {Math.round(st.totalSales).toLocaleString()}
                                     </span>
+                                    <span
+                                      data-per={barWidthPct}
+                                      data-per-role="counter"
+                                      data-stagger-index={idx}
+                                      className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-cyan-300 border border-purple-200/60 dark:border-purple-800/60 text-[10px] font-extrabold min-w-[2.4rem] text-right"
+                                    >
+                                      0%
+                                    </span>
                                   </div>
                                 </div>
                                 <div className="w-full h-2 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden">
                                   <div
-                                    className="h-full rounded-full bg-gradient-to-r from-purple-600 via-indigo-500 to-cyan-400 transition-all duration-500"
-                                    style={{ width: `${barWidthPct}%` }}
+                                    role="progressbar"
+                                    aria-valuemin={0}
+                                    aria-valuemax={100}
+                                    aria-valuenow={0}
+                                    aria-label={st.name}
+                                    data-per={barWidthPct}
+                                    data-per-role="bar"
+                                    data-stagger-index={idx}
+                                    className="h-full rounded-full bg-gradient-to-r from-purple-600 via-indigo-500 to-cyan-400"
+                                    style={{ width: '0%' }}
                                   />
                                 </div>
                               </div>
@@ -2564,27 +2890,29 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                           </div>
                         </button>
 
-                        {/* Action 6: Export All SQL Backup */}
+                        {/* Action 6: Import & Export Platform SQL */}
                         <button
                           type="button"
-                          disabled={exportingPlatform}
-                          onClick={handleExportPlatformSql}
-                          className="quick-action-btn p-3.5 rounded-xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/70 dark:bg-slate-950/50 text-left transition-all duration-200 flex flex-col justify-between group cursor-pointer shadow-2xs overflow-hidden disabled:opacity-50"
+                          onClick={() => {
+                            setImportSqlError(null);
+                            setImportSqlModalOpen(true);
+                          }}
+                          className="quick-action-btn p-3.5 rounded-xl border border-slate-200/90 dark:border-slate-800/90 bg-slate-50/70 dark:bg-slate-950/50 text-left transition-all duration-200 flex flex-col justify-between group cursor-pointer shadow-2xs overflow-hidden"
                         >
                           <div className="flex items-center justify-between">
                             <div className="w-9 h-9 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-purple-600 dark:text-purple-400 group-hover:scale-105 group-hover:border-purple-300 dark:group-hover:border-purple-500/50 transition shadow-2xs">
-                              <Download className="w-4 h-4" />
+                              <Upload className="w-4 h-4" />
                             </div>
                             <kbd className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 group-hover:border-purple-300 dark:group-hover:border-purple-500/50 group-hover:text-purple-700 dark:group-hover:text-purple-300 transition">
-                              SQL
+                              .SQL
                             </kbd>
                           </div>
                           <div className="mt-3">
                             <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-300 transition">
-                              {exportingPlatform ? 'Exporting...' : 'Export All SQL'}
+                              Import SQL Script
                             </div>
                             <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 transition">
-                              Full Platform Backup
+                              24-Store Seed &amp; Restore
                             </div>
                           </div>
                         </button>
@@ -2595,159 +2923,260 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
               );
             })()}
 
-            {/* SECTION 1: DEPLOYED STORES & REAL-TIME MIDDLEWARE ACCESS CONTROL (Strictly on 'stores' route only) */}
+            {/* SECTION 1: DEPLOYED STORES & REAL-TIME MIDDLEWARE ACCESS CONTROL (Aligned with Product Route Theme, Cards, Thead & Tbody) */}
             {activeTab === 'stores' && (
-              <div className="app-card bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-indigo-500/20 rounded-2xl overflow-hidden shadow-xs transition-colors">
-                <div className="px-5 sm:px-6 py-4 border-b border-slate-200/80 dark:border-indigo-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-4 max-w-7xl mx-auto text-xs select-none">
+                {/* Top Banner & Action (Aligned with Product Route) */}
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-purple-800/80 shadow-sm transition-colors dark:text-white"
+                >
                   <div>
-                    <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <Store className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                      <span>Deployed Stores &amp; Real-Time Middleware Access Control</span>
+                    <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                      Deployed Stores &amp; Middleware Control
                     </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Toggling a store&apos;s status immediately revokes or restores access at the tenant and JWT middleware level.
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-purple-200/80 font-medium mt-0.5">
+                      1 Store = 1 Isolated Tenant = Real-Time JWT &amp; Middleware Access Control
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-[#131B2E] p-1 border border-slate-200/80 dark:border-indigo-500/20 text-xs">
-                      {(['ALL', 'ACTIVE', 'EXPIRED', 'SUSPENDED'] as const).map((statusOpt) => (
-                        <button
-                          key={statusOpt}
-                          type="button"
-                          onClick={() => setStatusFilter(statusOpt)}
-                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${
-                            statusFilter === statusOpt
-                              ? 'bg-white dark:bg-purple-600 text-purple-700 dark:text-white shadow-2xs'
-                              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                          }`}
-                        >
-                          {statusOpt}
-                        </button>
-                      ))}
-                    </div>
-                    <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-500/30">
-                      {filteredStores.length} Tenants
-                    </span>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportSqlError(null);
+                        setImportSqlModalOpen(true);
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/30 text-white dark:text-indigo-200 border border-indigo-500 dark:border-indigo-400/40 shadow-sm font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition-all cursor-pointer"
+                      title="Import Multi-Store or Platform Database .SQL Script"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Import SQL</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={exportingPlatform}
+                      onClick={handleExportPlatformSql}
+                      className="bg-[#0284C7] hover:bg-[#0369A1] dark:bg-purple-500/20 dark:hover:bg-purple-500/30 text-white dark:text-purple-200 border border-[#0284C7] dark:border-purple-400/40 shadow-sm dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition-all cursor-pointer disabled:opacity-50"
+                      title="Export All Stores & Platform Database to .SQL File"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>{exportingPlatform ? 'Exporting SQL...' : 'Export All SQL'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('requests')}
+                      className="bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500/20 dark:hover:bg-emerald-500/30 text-white dark:text-emerald-200 border border-emerald-500 dark:border-emerald-400/40 shadow-sm font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-1.5 transition-all cursor-pointer active:scale-95"
+                      title="View Incoming Store Requests Queue"
+                    >
+                      <Clock className="w-4 h-4" />
+                      <span>Store Requests ({pendingRequestsCount})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCreateModalOpen(true)}
+                      className="bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 dark:from-purple-600 dark:to-indigo-600 text-white border border-purple-400/40 dark:border-purple-400/50 shadow-md shadow-purple-600/25 dark:shadow-[0_0_14px_rgba(147,51,234,0.3)] font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-1.5 transition-all cursor-pointer active:scale-95"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add New Store</span>
+                    </button>
                   </div>
-                </div>
+                </motion.div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-200/80 dark:border-indigo-500/20 text-[11px] font-mono uppercase text-slate-500 dark:text-slate-400 bg-slate-50/80 dark:bg-[#0D1322]/60">
-                        <th className="py-3.5 px-5">Store</th>
-                        <th className="py-3.5 px-4">Contact &amp; Currency</th>
-                        <th className="py-3.5 px-4">Subscription &amp; App Key</th>
-                        <th className="py-3.5 px-4 text-right">Products</th>
-                        <th className="py-3.5 px-4 text-right">Total Sales</th>
-                        <th className="py-3.5 px-4 text-center">Status</th>
-                        <th className="py-3.5 px-5 text-right">Real-Time Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200/70 dark:divide-indigo-500/15 text-sm">
-                      {filteredStores.length === 0 ? (
+                {/* Filter and Search Bar (Aligned with Product Route) */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.25 }}
+                  className="app-card p-4 flex flex-wrap items-center gap-3 text-xs transition-colors dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 dark:border-purple-800/80 dark:text-white"
+                >
+                  <div className="flex-1 min-w-[240px] relative">
+                    <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search by store name, owner email, or phone..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="app-input w-full pl-[2.125rem] pr-8 py-2.5 text-xs font-medium dark:bg-slate-900/80 dark:border-purple-800/60 dark:text-white dark:placeholder-slate-400"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200 p-1 text-xs cursor-pointer"
+                        title="Clear search"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(['ALL', 'ACTIVE', 'EXPIRED', 'SUSPENDED', 'ONLINE'] as const).map((statusOpt) => (
+                      <button
+                        key={statusOpt}
+                        type="button"
+                        onClick={() => setStatusFilter(statusOpt)}
+                        className={`px-3.5 py-2.5 rounded-xl font-bold border transition cursor-pointer text-xs flex items-center gap-1.5 ${
+                          statusFilter === statusOpt
+                            ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 text-white border-purple-400/50 shadow-md shadow-purple-600/20 dark:shadow-[0_0_14px_rgba(147,51,234,0.3)]'
+                            : 'bg-slate-50 dark:bg-purple-500/20 text-slate-700 dark:text-purple-200 border-slate-200 dark:border-purple-400/40 dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] hover:bg-slate-100 dark:hover:bg-purple-500/30 dark:hover:text-white'
+                        }`}
+                      >
+                        {statusOpt === 'ONLINE' && (
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              statusFilter === 'ONLINE'
+                                ? 'bg-emerald-300 animate-pulse'
+                                : 'bg-emerald-500'
+                            }`}
+                          />
+                        )}
+                        <span>{statusOpt}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <span className="font-mono font-bold px-3.5 py-2.5 rounded-xl bg-purple-50 dark:bg-purple-500/20 text-purple-700 dark:text-purple-200 border border-purple-200 dark:border-purple-400/40 dark:shadow-[0_0_14px_rgba(147,51,234,0.2)]">
+                    {filteredStores.length} Tenants
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={loadOverview}
+                    disabled={loading}
+                    className="flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-100 dark:bg-purple-500/20 hover:bg-slate-200 dark:hover:bg-purple-500/30 text-slate-700 dark:text-purple-200 dark:hover:text-white border border-slate-200 dark:border-purple-400/40 dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] font-bold rounded-xl transition cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                    title={loading ? 'Refreshing deployed stores...' : 'Refresh store stats & records'}
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${
+                        loading ? 'animate-spin text-blue-600 dark:text-purple-300' : 'text-blue-600 dark:text-purple-300'
+                      }`}
+                    />
+                    <span>Refresh</span>
+                  </button>
+                </motion.div>
+
+                {/* Deployed Stores Table (Aligned with Product Route Table, Thead & Tbody) */}
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: 0.3 }}
+                  className="app-card overflow-hidden transition-colors dark:border-purple-800/60"
+                >
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 text-slate-700 dark:text-white font-bold border-b border-slate-200 dark:border-purple-800/80 text-[11px] uppercase tracking-wider">
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                            No stores match your current filter criteria.
-                          </td>
+                          <th className="py-3.5 px-4 w-14">Store</th>
+                          <th className="py-3.5 px-4">Store Name &amp; ID</th>
+                          <th className="py-3.5 px-3">Owner &amp; Setup Status</th>
+                          <th className="py-3.5 px-4">Subscription &amp; Expiry</th>
+                          <th className="py-3.5 px-3 text-right">Total Sales &amp; Invoices</th>
+                          <th className="py-3.5 px-3 text-center">Catalog &amp; Stock</th>
+                          <th className="py-3.5 px-3 text-center">Status</th>
+                          <th className="py-3.5 px-4 text-center">Actions</th>
                         </tr>
-                      ) : (
-                        filteredStores.map((store) => {
-                          const effectiveStatus =
-                            store.subscriptionStatus === 'EXPIRED' || store.status === 'EXPIRED'
-                              ? 'EXPIRED'
-                              : store.status === 'SUSPENDED' || store.subscriptionStatus === 'SUSPENDED'
-                              ? 'SUSPENDED'
-                              : 'ACTIVE';
-                          const isActive = effectiveStatus === 'ACTIVE';
-                          const isExpired = effectiveStatus === 'EXPIRED';
-                          return (
-                            <tr
-                              key={store.id}
-                              className="hover:bg-slate-50/90 dark:hover:bg-white/[0.03] transition-colors"
-                            >
-                              <td className="py-4 px-5">
-                                <div className="flex items-center gap-3">
-                                  <div
-                                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-xs"
-                                    style={{ backgroundColor: store.themeColor || '#7C3AED' }}
-                                  >
-                                    {store.name.slice(0, 2).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                      <span>{store.name}</span>
-                                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700">
-                                        ID #{store.id}
-                                      </span>
-                                    </div>
-                                    <div className="text-xs font-mono text-purple-600 dark:text-indigo-300 font-semibold">
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                        {loading ? (
+                          <tr>
+                            <td colSpan={8} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                              <div className="flex flex-col items-center justify-center space-y-2">
+                                <RefreshCw className="w-6 h-6 animate-spin text-blue-600 dark:text-purple-400 mx-auto" />
+                                <p className="font-medium text-xs">Loading deployed stores...</p>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : filteredStores.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-12 text-center text-slate-400">
+                              No stores match your current filter criteria.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredStores.map((store) => {
+                            const effectiveStatus =
+                              store.subscriptionStatus === 'EXPIRED' || store.status === 'EXPIRED'
+                                ? 'EXPIRED'
+                                : store.status === 'SUSPENDED' || store.subscriptionStatus === 'SUSPENDED'
+                                ? 'SUSPENDED'
+                                : 'ACTIVE';
+                            const isActive = effectiveStatus === 'ACTIVE';
+                            const isExpired = effectiveStatus === 'EXPIRED';
 
-                              <td className="py-4 px-4">
-                                <div className="text-xs font-mono text-slate-800 dark:text-slate-200 font-bold">
-                                  {store.ownerEmail}
-                                </div>
-                                <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                                  {store.currency}{store.ownerPhone ? ` • ${store.ownerPhone}` : ''}
-                                </div>
-                                <div className="text-[10.5px] font-medium mt-0.5 text-slate-500 dark:text-slate-400">
-                                  {store.onboardingCompleted ? (
-                                    <span className="text-emerald-600 dark:text-emerald-400">
-                                      ● Initial Setup Complete
+                            return (
+                              <tr
+                                key={store.id}
+                                className="table-row-hover border-b border-slate-100 dark:border-slate-800/80"
+                              >
+                                {/* Store Avatar Box (Aligned with Product Image cell) */}
+                                <td className="py-3.5 px-4">
+                                  <div className="w-12 h-12 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100 dark:bg-[#0A0E1A] overflow-hidden flex items-center justify-center shrink-0 p-1 shadow-2xs">
+                                    <div
+                                      className="w-full h-full rounded-lg flex items-center justify-center text-white font-black text-xs shadow-2xs"
+                                      style={{ backgroundColor: store.themeColor || '#7C3AED' }}
+                                    >
+                                      {(store.name || 'ST').slice(0, 2).toUpperCase()}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Store Name & Tenant ID */}
+                                <td className="py-3.5 px-4">
+                                  <div className="font-bold text-slate-900 dark:text-white text-sm">
+                                    {store.name}
+                                  </div>
+                                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-indigo-50 dark:bg-[#312E81]/60 text-indigo-700 dark:text-[#A5B4FC] border border-indigo-200 dark:border-[#6366F1]/40 font-mono">
+                                      ID #{store.id}
                                     </span>
-                                  ) : (
-                                    <span className="text-amber-600 dark:text-amber-400">
-                                      ● Pending Owner Setup
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-sky-50 dark:bg-[#0284C7]/20 text-sky-700 dark:text-[#38BDF8] border border-sky-200 dark:border-[#0284C7]/40 font-mono">
+                                      {store.currency || 'Rs.'}
                                     </span>
+                                  </div>
+                                </td>
+
+                                {/* Owner Contact & Onboarding Setup Capsules */}
+                                <td className="py-3.5 px-3">
+                                  <div className="font-mono text-[11px] font-bold text-slate-800 dark:text-white">
+                                    {store.ownerEmail}
+                                  </div>
+                                  {store.ownerPhone && (
+                                    <div className="text-[10.5px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
+                                      {store.ownerPhone}
+                                    </div>
                                   )}
-                                </div>
-                              </td>
+                                  <div className="mt-1">
+                                    {store.onboardingCompleted ? (
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                                        ● Setup Complete
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60">
+                                        ● Pending Setup
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
 
-                              <td className="py-4 px-4">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-[11px] font-bold text-slate-800 dark:text-purple-200 select-all">
-                                    <KeyRound className="w-3 h-3 text-purple-600 dark:text-purple-400 shrink-0" />
-                                    {store.appKey || 'APP-KEY-N/A'}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (store.appKey && navigator.clipboard) {
-                                        navigator.clipboard.writeText(store.appKey).catch(() => {});
-                                        setSuccessMessage(`Copied App Key for ${store.name}: ${store.appKey}`);
-                                      }
-                                    }}
-                                    className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-purple-600 dark:hover:text-white cursor-pointer"
-                                    title="Copy App Key"
-                                  >
-                                    <Copy className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={regeneratingKeyId === store.id}
-                                    onClick={() => handleRegenerateStoreKey(store)}
-                                    className="p-1 rounded-md hover:bg-purple-100 dark:hover:bg-purple-900/50 text-slate-400 hover:text-purple-600 dark:hover:text-purple-300 cursor-pointer disabled:opacity-50"
-                                    title="Regenerate Unique App Key"
-                                  >
-                                    <RefreshCw
-                                      className={`w-3 h-3 ${regeneratingKeyId === store.id ? 'animate-spin text-purple-600' : ''}`}
-                                    />
-                                  </button>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] font-mono">
-                                  <span className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-200/70 dark:border-purple-500/30 font-bold">
-                                    {store.subscriptionPlan === '6_MONTHS' ? '6 Months' : 'Yearly'}
-                                  </span>
-                                  <span
-                                    className={`${
+                                {/* Subscription Plan & Expiry */}
+                                <td className="py-3.5 px-4">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-blue-50 dark:bg-[#1E3A8A]/50 text-blue-800 dark:text-[#93C5FD] border border-blue-200 dark:border-[#3B82F6]/40">
+                                      {store.subscriptionPlan === '6_MONTHS' ? '6 Months Plan' : 'Yearly Plan'}
+                                    </span>
+                                  </div>
+                                  <div
+                                    className={`font-mono text-[11px] font-bold mt-1 ${
                                       isExpired
-                                        ? 'text-amber-600 dark:text-amber-400 font-bold'
-                                        : 'text-slate-500 dark:text-slate-400'
+                                        ? 'text-amber-600 dark:text-amber-400'
+                                        : 'text-slate-700 dark:text-slate-300'
                                     }`}
                                   >
                                     Exp:{' '}
@@ -2758,345 +3187,485 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                           day: 'numeric',
                                         })
                                       : 'N/A'}
-                                  </span>
-                                </div>
-                              </td>
+                                  </div>
+                                </td>
 
-                              <td className="py-4 px-4 text-right font-mono">
-                                <div className="text-sm font-bold text-slate-900 dark:text-white">
-                                  {store.productCount.toLocaleString()}
-                                </div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  {store.totalStockUnits.toLocaleString()} units
-                                </div>
-                              </td>
-
-                              <td className="py-4 px-4 text-right font-mono">
-                                <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                                  {store.currency} {Math.round(store.totalSales).toLocaleString()}
-                                </div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  {store.salesCount} invoices
-                                </div>
-                              </td>
-
-                              <td className="py-4 px-4 text-center">
-                                <span
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold ${
-                                    isActive
-                                      ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30'
-                                      : isExpired
-                                      ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30'
-                                      : 'bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30'
-                                  }`}
-                                >
-                                  <span
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                      isActive
-                                        ? 'bg-emerald-500'
-                                        : isExpired
-                                        ? 'bg-amber-500'
-                                        : 'bg-rose-500'
-                                    }`}
-                                  />
-                                  {effectiveStatus}
-                                </span>
-                              </td>
-
-                              <td className="py-4 px-5 text-right">
-                                <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                                  {/* Manage Subscription & App Key */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditSubscription(store)}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-500/15 dark:hover:bg-purple-500/25 text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-500/30 text-xs font-bold transition-colors cursor-pointer"
-                                    title="Edit Subscription Plan, Expiry Date & App Key"
-                                  >
-                                    <KeyRound className="w-3.5 h-3.5" />
-                                    <span>Subscription</span>
-                                  </button>
-
-                                  {/* Activate / Suspend Toggle */}
-                                  <button
-                                    type="button"
-                                    disabled={togglingId === store.id}
-                                    onClick={() => handleToggleStoreStatus(store)}
-                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                                      isActive
-                                        ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30'
-                                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs'
-                                    }`}
-                                    title={
-                                      isActive
-                                        ? 'Suspend Store Immediately at Middleware Level'
-                                        : 'Activate Store Access'
-                                    }
-                                  >
-                                    <Power className="w-3.5 h-3.5" />
-                                    <span>
-                                      {togglingId === store.id
-                                        ? 'Updating...'
-                                        : isActive
-                                        ? 'Suspend'
-                                        : 'Activate'}
+                                {/* Total Sales & Invoices (Aligned with Pricing & Cost column) */}
+                                <td className="py-3.5 px-3 text-right">
+                                  <div className="font-mono font-bold text-slate-900 dark:text-white text-xs">
+                                    {store.currency} {Math.round(store.totalSales).toLocaleString()}
+                                  </div>
+                                  <div className="flex items-center justify-end gap-1 mt-0.5">
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 uppercase">
+                                      POS
                                     </span>
-                                  </button>
+                                    <span className="text-[11px] font-mono font-bold text-purple-600 dark:text-purple-400">
+                                      {store.salesCount} invoices
+                                    </span>
+                                  </div>
+                                </td>
 
-                                  {/* Export Store Data to SQL File */}
-                                  <button
-                                    type="button"
-                                    disabled={exportingStoreId === store.id}
-                                    onClick={() => handleExportStoreSql(store)}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-500/15 dark:hover:bg-sky-500/25 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-500/30 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-                                    title={`Export ${store.name} Database to .SQL Backup File`}
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                    <span>{exportingStoreId === store.id ? 'Exporting...' : 'Export SQL'}</span>
-                                  </button>
+                                {/* Catalog & Stock (Aligned with Total Stock column) */}
+                                <td className="py-3.5 px-3 text-center">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 font-mono">
+                                    {store.productCount.toLocaleString()} SKUs
+                                  </span>
+                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono font-semibold mt-0.5">
+                                    {store.totalStockUnits.toLocaleString()} units
+                                  </div>
+                                </td>
 
-                                  {/* Delete Store Button */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setStoreToDelete(store)}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/15 dark:hover:bg-rose-500/25 text-rose-600 dark:text-rose-300 border border-rose-200/80 dark:border-rose-500/30 text-xs font-bold transition-colors cursor-pointer"
-                                    title={`Delete Store '${store.name}' and all its isolated records`}
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span className="hidden xl:inline">Delete</span>
-                                  </button>
-
-                                  {/* Initial Store Setup / Onboarding */}
-                                  <button
-                                    type="button"
-                                    onClick={() => onOpenOnboarding(store.slug)}
-                                    className={`p-2 rounded-xl transition-colors cursor-pointer border ${
-                                      store.onboardingCompleted
-                                        ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border-emerald-200/80 dark:border-emerald-700/60'
-                                        : 'bg-purple-50 hover:bg-purple-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-purple-700 dark:text-purple-300 border-purple-200/80 dark:border-slate-700'
-                                    }`}
-                                    title={
-                                      store.onboardingCompleted
-                                        ? 'Initial Store Setup & POS Defaults Locked'
-                                        : 'Open Initial Store Setup'
-                                    }
-                                  >
-                                    {store.onboardingCompleted ? (
-                                      <Lock className="w-4 h-4" />
-                                    ) : (
-                                      <Wand2 className="w-4 h-4" />
+                                {/* Status Pill */}
+                                <td className="py-3.5 px-3 text-center">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono ${
+                                        isActive
+                                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60'
+                                          : isExpired
+                                          ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60'
+                                          : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`w-1.5 h-1.5 rounded-full ${
+                                          isActive
+                                            ? 'bg-emerald-500'
+                                            : isExpired
+                                            ? 'bg-amber-500'
+                                            : 'bg-rose-500'
+                                        }`}
+                                      />
+                                      {effectiveStatus}
+                                    </span>
+                                    {isActive && store.isOnline !== false && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wide bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/60 font-mono">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                                        ONLINE
+                                      </span>
                                     )}
-                                  </button>
+                                  </div>
+                                </td>
 
-                                  {/* Open Store POS */}
-                                  <button
-                                    type="button"
-                                    onClick={() => onOpenStore(store.slug)}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                                  >
-                                    <span>Open POS</span>
-                                    <ArrowRight className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                                {/* Actions (Aligned with Product Route Action Buttons) */}
+                                <td className="py-3.5 px-4 text-center">
+                                  <div className="flex items-center justify-center flex-wrap gap-1.5">
+                                    {/* 1. Manage Subscription */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditSubscription(store)}
+                                      className="px-2 py-1.5 rounded-xl border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-[#0E1628] text-purple-700 dark:text-purple-400 hover:bg-purple-600 dark:hover:bg-purple-600 hover:text-white dark:hover:text-white transition-all shadow-2xs group relative cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                                      title="Edit Subscription Plan & Expiry Date"
+                                    >
+                                      <Calendar className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                                      <span className="hidden xl:inline">Plan</span>
+                                    </button>
+
+                                    {/* 2. Activate / Suspend Toggle */}
+                                    <button
+                                      type="button"
+                                      disabled={togglingId === store.id}
+                                      onClick={() => handleToggleStoreStatus(store)}
+                                      className={`px-2 py-1.5 rounded-xl border transition-all shadow-2xs group relative cursor-pointer flex items-center gap-1 text-[11px] font-bold ${
+                                        isActive
+                                          ? 'border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-[#0E1628] text-amber-700 dark:text-amber-400 hover:bg-amber-600 dark:hover:bg-amber-600 hover:text-white dark:hover:text-white'
+                                          : 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-[#0E1628] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-600 dark:hover:bg-emerald-600 hover:text-white dark:hover:text-white'
+                                      }`}
+                                      title={
+                                        isActive
+                                          ? 'Suspend Store Immediately at Middleware Level'
+                                          : 'Activate Store Access'
+                                      }
+                                    >
+                                      <Power className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                                      <span>
+                                        {togglingId === store.id
+                                          ? '...'
+                                          : isActive
+                                          ? 'Suspend'
+                                          : 'Activate'}
+                                      </span>
+                                    </button>
+
+                                    {/* 3. Export Store Data to SQL File */}
+                                    <button
+                                      type="button"
+                                      disabled={exportingStoreId === store.id}
+                                      onClick={() => handleExportStoreSql(store)}
+                                      className="p-1.5 rounded-xl border border-purple-200 dark:border-purple-400/40 bg-purple-50 dark:bg-purple-500/20 hover:bg-purple-600 dark:hover:bg-purple-500/30 text-purple-600 dark:text-purple-200 hover:text-white dark:hover:text-white dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] transition-all cursor-pointer disabled:opacity-50"
+                                      title={`Export ${store.name} Database to .SQL Backup File`}
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* 4. Initial Store Setup / Onboarding */}
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenOnboarding(store.slug)}
+                                      className="p-1.5 rounded-xl border border-purple-200 dark:border-purple-500/30 bg-purple-50/80 dark:bg-[#0E1628] hover:bg-purple-600 dark:hover:bg-purple-600 text-purple-600 dark:text-purple-400 hover:text-white dark:hover:text-white transition-all shadow-2xs group relative cursor-pointer"
+                                      title={
+                                        store.onboardingCompleted
+                                          ? 'Initial Store Setup & POS Defaults Locked'
+                                          : 'Open Initial Store Setup'
+                                      }
+                                    >
+                                      {store.onboardingCompleted ? (
+                                        <Lock className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <Wand2 className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+
+                                    {/* 5. Delete Store Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setStoreToDelete(store)}
+                                      className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-[#0E1628] hover:bg-rose-600 dark:hover:bg-rose-600 text-rose-600 dark:text-rose-400 hover:text-white dark:hover:text-white transition-all cursor-pointer"
+                                      title={`Delete Store '${store.name}' and all its isolated records`}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* 6. Open Store POS */}
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenStore(store.slug)}
+                                      className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 text-white border border-purple-400/40 dark:border-purple-400/50 shadow-2xs dark:shadow-[0_0_12px_rgba(147,51,234,0.25)] text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95"
+                                    >
+                                      <span>Open POS</span>
+                                      <ArrowRight className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </motion.div>
               </div>
             )}
 
-            {/* SECTION 2: STORE REQUESTS MANAGEMENT & 1-CLICK PROVISIONING (Strictly on 'requests' route only) */}
+            {/* SECTION 2: STORE REQUESTS MANAGEMENT & 1-CLICK PROVISIONING (Aligned with Product Route Theme, Cards, Thead & Tbody) */}
             {activeTab === 'requests' && (
-              <div className="app-card bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-indigo-500/20 rounded-2xl overflow-hidden shadow-xs transition-colors">
-                <div className="px-5 sm:px-6 py-4 border-b border-slate-200/80 dark:border-indigo-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-4 max-w-7xl mx-auto text-xs select-none">
+                {/* Top Banner & Action (Aligned with Product Route) */}
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-purple-800/80 shadow-sm transition-colors dark:text-white"
+                >
                   <div>
-                    <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-amber-500" />
-                      <span>Store Requests Management &amp; 1-Click Provisioning</span>
+                    <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                      Store Requests &amp; 1-Click Provisioning
                     </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Approve, reject, reopen, or delete incoming store requests. Approving automatically creates the Store Tenant and Owner account.
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-purple-200/80 font-medium mt-0.5">
+                      Approve, reject, reopen, or delete incoming store requests • 1-Click Tenant &amp; Owner Setup
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-[#131B2E] p-1 border border-slate-200/80 dark:border-indigo-500/20 text-xs">
-                      {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((reqOpt) => (
-                        <button
-                          key={reqOpt}
-                          type="button"
-                          onClick={() => setRequestStatusFilter(reqOpt)}
-                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${
-                            requestStatusFilter === reqOpt
-                              ? 'bg-white dark:bg-purple-600 text-purple-700 dark:text-white shadow-2xs'
-                              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                          }`}
-                        >
-                          {reqOpt}
-                        </button>
-                      ))}
-                    </div>
-                    <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
-                      {pendingRequestsCount} Pending
-                    </span>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('stores')}
+                      className="bg-[#0284C7] hover:bg-[#0369A1] dark:bg-purple-500/20 dark:hover:bg-purple-500/30 text-white dark:text-purple-200 border border-[#0284C7] dark:border-purple-400/40 shadow-sm dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-2 transition-all cursor-pointer"
+                      title="View Deployed Stores Directory"
+                    >
+                      <Store className="w-4 h-4" />
+                      <span>Deployed Stores ({stores.length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCreateModalOpen(true)}
+                      className="bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 dark:from-purple-600 dark:to-indigo-600 text-white border border-purple-400/40 dark:border-purple-400/50 shadow-md shadow-purple-600/25 dark:shadow-[0_0_14px_rgba(147,51,234,0.3)] font-bold px-4 py-2.5 rounded-xl text-xs flex items-center space-x-1.5 transition-all cursor-pointer active:scale-95"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add New Store</span>
+                    </button>
                   </div>
-                </div>
+                </motion.div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-200/80 dark:border-indigo-500/20 text-[11px] font-mono uppercase text-slate-500 dark:text-slate-400 bg-slate-50/80 dark:bg-[#0D1322]/60">
-                        <th className="py-3.5 px-5">Requested Store</th>
-                        <th className="py-3.5 px-4">Contact Details</th>
-                        <th className="py-3.5 px-4">Plan</th>
-                        <th className="py-3.5 px-4 text-center">Status</th>
-                        <th className="py-3.5 px-5 text-right">Manage Request Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200/70 dark:divide-indigo-500/15 text-sm">
-                      {filteredRequests.length === 0 ? (
+                {/* Filter and Search Bar (Aligned with Product Route) */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.25 }}
+                  className="app-card p-4 flex flex-wrap items-center gap-3 text-xs transition-colors dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 dark:border-purple-800/80 dark:text-white"
+                >
+                  <div className="flex-1 min-w-[240px] relative">
+                    <Search className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search requests by store name or owner email..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="app-input w-full pl-[2.125rem] pr-8 py-2.5 text-xs font-medium dark:bg-slate-900/80 dark:border-purple-800/60 dark:text-white dark:placeholder-slate-400"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-200 p-1 text-xs cursor-pointer"
+                        title="Clear search"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((reqOpt) => (
+                      <button
+                        key={reqOpt}
+                        type="button"
+                        onClick={() => setRequestStatusFilter(reqOpt)}
+                        className={`px-3.5 py-2.5 rounded-xl font-bold border transition cursor-pointer text-xs ${
+                          requestStatusFilter === reqOpt
+                            ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 text-white border-purple-400/50 shadow-md shadow-purple-600/20 dark:shadow-[0_0_14px_rgba(147,51,234,0.3)]'
+                            : 'bg-slate-50 dark:bg-purple-500/20 text-slate-700 dark:text-purple-200 border-slate-200 dark:border-purple-400/40 dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] hover:bg-slate-100 dark:hover:bg-purple-500/30 dark:hover:text-white'
+                        }`}
+                      >
+                        {reqOpt}
+                      </button>
+                    ))}
+                  </div>
+
+                  <span className="font-mono font-bold px-3.5 py-2.5 rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 shadow-xs">
+                    {pendingRequestsCount} Pending
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={loadOverview}
+                    disabled={loading}
+                    className="flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-100 dark:bg-purple-500/20 hover:bg-slate-200 dark:hover:bg-purple-500/30 text-slate-700 dark:text-purple-200 dark:hover:text-white border border-slate-200 dark:border-purple-400/40 dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] font-bold rounded-xl transition cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+                    title={loading ? 'Refreshing store requests...' : 'Refresh request queue'}
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${
+                        loading ? 'animate-spin text-blue-600 dark:text-purple-300' : 'text-blue-600 dark:text-purple-300'
+                      }`}
+                    />
+                    <span>Refresh</span>
+                  </button>
+                </motion.div>
+
+                {/* Store Requests Table (Aligned with Product Route Table, Thead & Tbody) */}
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, delay: 0.3 }}
+                  className="app-card overflow-hidden transition-colors dark:border-purple-800/60"
+                >
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 text-slate-700 dark:text-white font-bold border-b border-slate-200 dark:border-purple-800/80 text-[11px] uppercase tracking-wider">
                         <tr>
-                          <td colSpan={5} className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                            No store requests match the selected filter.
-                          </td>
+                          <th className="py-3.5 px-4 w-14">Store</th>
+                          <th className="py-3.5 px-4">Requested Store &amp; Type</th>
+                          <th className="py-3.5 px-3">Contact Details &amp; Notes</th>
+                          <th className="py-3.5 px-4">Subscription Plan</th>
+                          <th className="py-3.5 px-3 text-center">Status</th>
+                          <th className="py-3.5 px-4 text-center">Actions</th>
                         </tr>
-                      ) : (
-                        filteredRequests.map((reqItem) => {
-                          const isPending = reqItem.status === 'PENDING';
-                          const isRejected = reqItem.status === 'REJECTED';
-                          return (
-                            <tr
-                              key={reqItem.id}
-                              className="hover:bg-slate-50/90 dark:hover:bg-white/[0.03] transition-colors"
-                            >
-                              <td className="py-4 px-5 font-bold text-slate-900 dark:text-white">
-                                <div className="flex items-center gap-2">
-                                  <span>{reqItem.store_name}</span>
-                                  {(reqItem as any).request_type === 'RENEWAL' && (
-                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30">
-                                      RENEWAL
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                        {loading ? (
+                          <tr>
+                            <td colSpan={6} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                              <div className="flex flex-col items-center justify-center space-y-2">
+                                <RefreshCw className="w-6 h-6 animate-spin text-blue-600 dark:text-purple-400 mx-auto" />
+                                <p className="font-medium text-xs">Loading store requests...</p>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : filteredRequests.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-12 text-center text-slate-400">
+                              No store requests match the selected filter.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredRequests.map((reqItem) => {
+                            const isPending = reqItem.status === 'PENDING';
+                            const isRejected = reqItem.status === 'REJECTED';
+                            const isRenewal = (reqItem as any).request_type === 'RENEWAL';
+
+                            return (
+                              <tr
+                                key={reqItem.id}
+                                className="table-row-hover border-b border-slate-100 dark:border-slate-800/80"
+                              >
+                                {/* Store Avatar Box (Aligned with Product Image cell) */}
+                                <td className="py-3.5 px-4">
+                                  <div className="w-12 h-12 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100 dark:bg-[#0A0E1A] overflow-hidden flex items-center justify-center shrink-0 p-1 shadow-2xs">
+                                    <div className="w-full h-full rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-black text-xs shadow-2xs">
+                                      {(reqItem.store_name || 'SR').slice(0, 2).toUpperCase()}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Requested Store & Type */}
+                                <td className="py-3.5 px-4">
+                                  <div className="font-bold text-slate-900 dark:text-white text-sm">
+                                    {reqItem.store_name}
+                                  </div>
+                                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-indigo-50 dark:bg-[#312E81]/60 text-indigo-700 dark:text-[#A5B4FC] border border-indigo-200 dark:border-[#6366F1]/40 font-mono">
+                                      REQ #{reqItem.id}
                                     </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-4 px-4">
-                                <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
-                                  {reqItem.owner_email}
-                                </div>
-                                {reqItem.owner_phone && (
-                                  <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                                    {reqItem.owner_phone}
+                                    {isRenewal ? (
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-500/40">
+                                        Renewal
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-sky-50 dark:bg-[#0284C7]/20 text-sky-700 dark:text-[#38BDF8] border border-sky-200 dark:border-[#0284C7]/40">
+                                        New Store
+                                      </span>
+                                    )}
                                   </div>
-                                )}
-                                {(reqItem as any).notes && (
-                                  <div className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-0.5">
-                                    &ldquo;{(reqItem as any).notes}&rdquo;
+                                </td>
+
+                                {/* Contact Details & Notes */}
+                                <td className="py-3.5 px-3">
+                                  <div className="font-mono text-[11px] font-bold text-slate-800 dark:text-white">
+                                    {reqItem.owner_email}
                                   </div>
-                                )}
-                              </td>
-                              <td className="py-4 px-4 font-mono text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                                {reqItem.plan}
-                              </td>
-                              <td className="py-4 px-4 text-center">
-                                <span
-                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold ${
-                                    reqItem.status === 'PENDING'
-                                      ? 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30'
-                                      : reqItem.status === 'APPROVED'
-                                      ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30'
-                                      : 'bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30'
-                                  }`}
-                                >
-                                  {reqItem.status}
-                                </span>
-                              </td>
-                              <td className="py-4 px-5 text-right">
-                                <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                                  {isPending && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        disabled={approvingId === reqItem.id}
-                                        onClick={() => handleApproveRequest(reqItem)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                                      >
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                        <span>
-                                          {approvingId === reqItem.id
-                                            ? 'Processing...'
-                                            : (reqItem as any).request_type === 'RENEWAL'
-                                            ? 'Approve & Extend'
-                                            : 'Approve & Provision'}
-                                        </span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={updatingRequestId === reqItem.id}
-                                        onClick={() => handleRejectRequest(reqItem)}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-slate-800 dark:hover:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-slate-700 text-xs font-bold transition-colors cursor-pointer"
-                                      >
-                                        <XCircle className="w-3.5 h-3.5" />
-                                        <span>Reject</span>
-                                      </button>
-                                    </>
+                                  {reqItem.owner_phone && (
+                                    <div className="text-[10.5px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
+                                      {reqItem.owner_phone}
+                                    </div>
                                   )}
-
-                                  {isRejected && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        disabled={approvingId === reqItem.id}
-                                        onClick={() => handleApproveRequest(reqItem)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                                      >
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                        <span>Approve Anyway</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={updatingRequestId === reqItem.id}
-                                        onClick={() => handleReopenRequest(reqItem)}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer"
-                                        title="Reopen request as PENDING"
-                                      >
-                                        <RotateCcw className="w-3.5 h-3.5" />
-                                        <span>Reopen</span>
-                                      </button>
-                                    </>
+                                  {(reqItem as any).notes && (
+                                    <div className="text-[10.5px] text-slate-500 dark:text-slate-400 italic mt-0.5">
+                                      &ldquo;{(reqItem as any).notes}&rdquo;
+                                    </div>
                                   )}
+                                </td>
 
-                                  {reqItem.status === 'APPROVED' && (
+                                {/* Subscription Plan Capsule */}
+                                <td className="py-3.5 px-4">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-blue-50 dark:bg-[#1E3A8A]/50 text-blue-800 dark:text-[#93C5FD] border border-blue-200 dark:border-[#3B82F6]/40 font-mono">
+                                    {reqItem.plan}
+                                  </span>
+                                </td>
+
+                                {/* Status Pill */}
+                                <td className="py-3.5 px-3 text-center">
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono ${
+                                      reqItem.status === 'PENDING'
+                                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60'
+                                        : reqItem.status === 'APPROVED'
+                                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60'
+                                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`w-1.5 h-1.5 rounded-full ${
+                                        reqItem.status === 'PENDING'
+                                          ? 'bg-amber-500'
+                                          : reqItem.status === 'APPROVED'
+                                          ? 'bg-emerald-500'
+                                          : 'bg-rose-500'
+                                      }`}
+                                    />
+                                    {reqItem.status}
+                                  </span>
+                                </td>
+
+                                {/* Actions (Aligned with Product Route Action Buttons) */}
+                                <td className="py-3.5 px-4 text-center">
+                                  <div className="flex items-center justify-center flex-wrap gap-1.5">
+                                    {isPending && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          disabled={approvingId === reqItem.id}
+                                          onClick={() => handleApproveRequest(reqItem)}
+                                          className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 disabled:opacity-50 text-white border border-purple-400/40 dark:border-purple-400/50 shadow-2xs dark:shadow-[0_0_12px_rgba(147,51,234,0.25)] text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          <span>
+                                            {approvingId === reqItem.id
+                                              ? 'Processing...'
+                                              : isRenewal
+                                              ? 'Approve & Extend'
+                                              : 'Approve & Provision'}
+                                          </span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          disabled={updatingRequestId === reqItem.id}
+                                          onClick={() => handleRejectRequest(reqItem)}
+                                          className="px-2 py-1.5 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-[#0E1628] text-amber-700 dark:text-amber-400 hover:bg-amber-600 dark:hover:bg-amber-600 hover:text-white dark:hover:text-white transition-all shadow-2xs group relative cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                                        >
+                                          <XCircle className="w-3.5 h-3.5" />
+                                          <span>Reject</span>
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {isRejected && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          disabled={approvingId === reqItem.id}
+                                          onClick={() => handleApproveRequest(reqItem)}
+                                          className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 disabled:opacity-50 text-white border border-purple-400/40 dark:border-purple-400/50 shadow-2xs dark:shadow-[0_0_12px_rgba(147,51,234,0.25)] text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          <span>Approve Anyway</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          disabled={updatingRequestId === reqItem.id}
+                                          onClick={() => handleReopenRequest(reqItem)}
+                                          className="px-2 py-1.5 rounded-xl border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-[#0E1628] text-purple-700 dark:text-purple-400 hover:bg-purple-600 dark:hover:bg-purple-600 hover:text-white dark:hover:text-white transition-all shadow-2xs group relative cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                                          title="Reopen request as PENDING"
+                                        >
+                                          <RotateCcw className="w-3.5 h-3.5" />
+                                          <span>Reopen</span>
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {reqItem.status === 'APPROVED' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onOpenStore(reqItem.requested_slug)}
+                                        className="px-2.5 py-1.5 rounded-xl border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-[#0E1628] text-purple-700 dark:text-purple-400 hover:bg-purple-600 dark:hover:bg-purple-600 hover:text-white dark:hover:text-white transition-all shadow-2xs group relative cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                                      >
+                                        <Store className="w-3.5 h-3.5" />
+                                        <span>Open Store</span>
+                                      </button>
+                                    )}
+
                                     <button
                                       type="button"
-                                      onClick={() => onOpenStore(reqItem.requested_slug)}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-purple-700 dark:text-emerald-300 border border-purple-200/80 dark:border-slate-700 text-xs font-mono font-bold cursor-pointer"
+                                      disabled={deletingRequestId === reqItem.id}
+                                      onClick={() => handleDeleteRequest(reqItem)}
+                                      className="p-1.5 rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-[#0E1628] hover:bg-rose-600 dark:hover:bg-rose-600 text-rose-600 dark:text-rose-400 hover:text-white dark:hover:text-white transition-all cursor-pointer disabled:opacity-50"
+                                      title="Delete Store Request"
                                     >
-                                      <Store className="w-3.5 h-3.5" />
-                                      <span>Open Store</span>
+                                      <Trash2 className="w-3.5 h-3.5" />
                                     </button>
-                                  )}
-
-                                  <button
-                                    type="button"
-                                    disabled={deletingRequestId === reqItem.id}
-                                    onClick={() => handleDeleteRequest(reqItem)}
-                                    className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/15 dark:hover:bg-rose-500/25 text-rose-600 dark:text-rose-300 border border-rose-200/80 dark:border-rose-500/30 transition-colors cursor-pointer disabled:opacity-50"
-                                    title="Delete Store Request"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </motion.div>
               </div>
             )}
 
@@ -3145,7 +3714,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                           className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-xs shrink-0"
                           style={{ backgroundColor: st.themeColor || '#7C3AED' }}
                         >
-                          {st.name.slice(0, 2).toUpperCase()}
+                          {(st.name || 'ST').slice(0, 2).toUpperCase()}
                         </div>
                         <div className="min-w-0">
                           <div className="font-bold text-slate-900 dark:text-white truncate">
@@ -3187,188 +3756,327 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
         </footer>
       </div>
 
-      {/* Add New Store Modal (Strictly Minimal Required Fields Only) */}
+      {/* Add New Store Modal (Aligned with ProductFormModal Header, Cards & Footer) */}
       {createModalOpen && (
-        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="app-card bg-white dark:bg-[#111827] border border-slate-200 dark:border-purple-800/70 rounded-2xl max-w-md w-full p-6 shadow-2xl text-slate-900 dark:text-white">
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                Add New Store
-              </h3>
-              <button
-                type="button"
-                onClick={() => setCreateModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
-              Simultaneously creates the Store Tenant entity and primary Owner User account. Store defaults (invoices, barcodes, address &amp; taxes) are configured by the Owner on first login.
-            </p>
-
-            {createStoreError && (
-              <div role="alert" aria-live="assertive" className="mb-4 flex items-start gap-2.5 rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs font-semibold leading-5 text-rose-800 dark:border-rose-500/40 dark:bg-rose-950/50 dark:text-rose-200">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
-                <span>{createStoreError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateStore} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Store Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newStoreName}
-                  onChange={(e) => setNewStoreName(toTitleCaseLive(e.target.value))}
-                  placeholder="Apex Footwear"
-                  className="app-input capitalize w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm outline-none focus:border-purple-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Owner Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newOwnerName}
-                  onChange={(e) => setNewOwnerName(toTitleCaseLive(e.target.value))}
-                  placeholder="Enter owner name"
-                  className="app-input capitalize w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm outline-none focus:border-purple-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Owner Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={newOwnerEmail}
-                  onChange={(e) => setNewOwnerEmail(e.target.value)}
-                  placeholder="Enter owner email"
-                  className="app-input w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm outline-none focus:border-purple-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Password *
-                </label>
-                <div className="relative">
-                  <input
-                    type={showNewOwnerPassword ? 'text' : 'password'}
-                    required
-                    minLength={4}
-                    value={newOwnerPassword}
-                    onChange={(e) => setNewOwnerPassword(e.target.value)}
-                    placeholder="Set initial Owner login password"
-                    className="app-input w-full pl-3.5 pr-10 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm font-mono outline-none focus:border-purple-600"
-                  />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto"
+          onClick={() => setCreateModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-2xl bg-white dark:bg-[#131B2E] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] border border-slate-200 dark:border-purple-800/80 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* MODAL HEADER ALIGNED WITH PRODUCT FORM MODAL */}
+            <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 border-b border-slate-200 dark:border-purple-800/80 text-slate-800 dark:text-white px-6 py-4 shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:bg-purple-500/20 dark:text-purple-300 border border-blue-500/20 dark:border-purple-400/30 flex items-center justify-center font-bold shadow-2xs shrink-0">
+                    <Store className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-slate-900 dark:text-white tracking-tight">
+                      Add New Store
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-purple-200/80">
+                      Provision a new Store Tenant entity &amp; primary Owner Administrator account
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowNewOwnerPassword((prev) => !prev)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
-                    title={showNewOwnerPassword ? 'Hide password' : 'Show password'}
+                    onClick={() => setCreateModalOpen(false)}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 dark:text-purple-300 dark:hover:text-white rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer"
                   >
-                    {showNewOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Confirm Password *
-                </label>
-                <input
-                  type={showNewOwnerPassword ? 'text' : 'password'}
-                  required
-                  minLength={4}
-                  value={newOwnerConfirmPassword}
-                  onChange={(e) => setNewOwnerConfirmPassword(e.target.value)}
-                  placeholder="Enter the password again"
-                  autoComplete="new-password"
-                  className="app-input w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm font-mono outline-none focus:border-purple-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Subscription Plan *
-                </label>
-                <select
-                  value={newSubscriptionPlan}
-                  onChange={(e) => setNewSubscriptionPlan(e.target.value as '6_MONTHS' | 'YEARLY')}
-                  className="app-input capitalize w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm font-semibold outline-none focus:border-purple-600 cursor-pointer"
+            {/* MODAL CARD BODY ALIGNED WITH PRODUCT FORM MODAL */}
+            <form
+              id="add-new-store-form"
+              onSubmit={handleCreateStore}
+              className="flex-1 overflow-y-auto p-6 space-y-5 text-xs bg-slate-50/50 dark:bg-[#070B14]"
+            >
+              {createStoreError && (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="alert-danger flex items-start gap-2.5 rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs font-semibold leading-5 text-rose-800 dark:border-rose-500/40 dark:bg-rose-950/50 dark:text-rose-200 animate-in fade-in"
                 >
-                  <option value="6_MONTHS">6 Months Plan</option>
-                  <option value="YEARLY">Yearly Plan (1 Year)</option>
-                </select>
-                <div className="mt-2 p-2.5 rounded-xl bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-800/50 text-[11px] font-mono text-slate-600 dark:text-purple-200 flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1.5">
-                    <KeyRound className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                    Auto App Key: <strong>APP-KEY-XXXX-XXXX</strong>
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+                  <span>{createStoreError}</span>
+                </div>
+              )}
+
+              {/* CARD 1: STORE & OWNER IDENTITY */}
+              <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-gray-200 dark:border-[#1A263D] shadow-xs dark:shadow-[0_0_20px_rgba(59,130,246,0.05)] space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+                  <h5 className="font-bold text-gray-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                    <Building2 className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                    <span>1. Store &amp; Owner Identity</span>
+                  </h5>
+                  <span className="text-[11px] text-gray-400 dark:text-slate-500 font-medium">
+                    Tenant Profile
                   </span>
-                  <span>
-                    Expires:{' '}
-                    <strong>
-                      {(() => {
-                        const d = new Date();
-                        if (newSubscriptionPlan === '6_MONTHS') {
-                          d.setMonth(d.getMonth() + 6);
-                        } else {
-                          d.setFullYear(d.getFullYear() + 1);
-                        }
-                        return d.toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        });
-                      })()}
-                    </strong>
-                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Store Name */}
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-gray-800 dark:text-slate-200 text-xs mb-1.5">
+                      Store Name <span className="text-red-500 dark:text-pink-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <Building2 className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        required
+                        autoFocus
+                        value={newStoreName}
+                        onChange={(e) => setNewStoreName(toTitleCaseLive(e.target.value))}
+                        placeholder="e.g. Apex Footwear"
+                        className="capitalize w-full pl-9 pr-3 py-2.5 bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 rounded-xl text-xs font-medium text-gray-900 dark:text-purple-100 placeholder-slate-400 dark:placeholder-purple-300/40 hover:bg-slate-50 dark:hover:bg-purple-500/30 outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Owner Name */}
+                  <div>
+                    <label className="block font-bold text-gray-800 dark:text-slate-200 text-xs mb-1.5">
+                      Owner Full Name <span className="text-red-500 dark:text-pink-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <UserIcon className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        required
+                        value={newOwnerName}
+                        onChange={(e) => setNewOwnerName(toTitleCaseLive(e.target.value))}
+                        placeholder="Enter owner name"
+                        className="capitalize w-full pl-9 pr-3 py-2.5 bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 rounded-xl text-xs font-medium text-gray-900 dark:text-purple-100 placeholder-slate-400 dark:placeholder-purple-300/40 hover:bg-slate-50 dark:hover:bg-purple-500/30 outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Owner Email */}
+                  <div>
+                    <label className="block font-bold text-gray-800 dark:text-slate-200 text-xs mb-1.5">
+                      Owner Login Email <span className="text-red-500 dark:text-pink-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="email"
+                        required
+                        value={newOwnerEmail}
+                        onChange={(e) => setNewOwnerEmail(e.target.value)}
+                        placeholder="owner@apexfootwear.com"
+                        className="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 rounded-xl text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 dark:placeholder-purple-300/40 hover:bg-slate-50 dark:hover:bg-purple-500/30 outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creatingStore}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-800 text-white text-xs font-bold shadow-sm cursor-pointer"
-                >
-                  {creatingStore ? 'Creating Store...' : 'Create Store & Owner'}
-                </button>
+              {/* CARD 2: OWNER SECURITY CREDENTIALS */}
+              <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-gray-200 dark:border-[#1A263D] shadow-xs dark:shadow-[0_0_20px_rgba(59,130,246,0.05)] space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+                  <h5 className="font-bold text-gray-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                    <Lock className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                    <span>2. Owner Security &amp; Credentials</span>
+                  </h5>
+                  <span className="text-[10px] text-purple-600 dark:text-purple-300 font-semibold bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800">
+                    Min 4 Characters
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Password */}
+                  <div>
+                    <label className="block font-bold text-gray-800 dark:text-slate-200 text-xs mb-1.5">
+                      Password <span className="text-red-500 dark:text-pink-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type={showNewOwnerPassword ? 'text' : 'password'}
+                        required
+                        minLength={4}
+                        value={newOwnerPassword}
+                        onChange={(e) => setNewOwnerPassword(e.target.value)}
+                        placeholder="Set initial Owner password"
+                        className="w-full pl-9 pr-10 py-2.5 bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 rounded-xl text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 dark:placeholder-purple-300/40 hover:bg-slate-50 dark:hover:bg-purple-500/30 outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewOwnerPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                        title={showNewOwnerPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showNewOwnerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div>
+                    <label className="block font-bold text-gray-800 dark:text-slate-200 text-xs mb-1.5">
+                      Confirm Password <span className="text-red-500 dark:text-pink-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type={showNewOwnerPassword ? 'text' : 'password'}
+                        required
+                        minLength={4}
+                        value={newOwnerConfirmPassword}
+                        onChange={(e) => setNewOwnerConfirmPassword(e.target.value)}
+                        placeholder="Enter the password again"
+                        autoComplete="new-password"
+                        className="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 rounded-xl text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 dark:placeholder-purple-300/40 hover:bg-slate-50 dark:hover:bg-purple-500/30 outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Real-time Password Match Indicator */}
+                {newOwnerPassword && newOwnerConfirmPassword && (
+                  <div
+                    className={`p-2.5 rounded-xl text-xs flex items-center gap-2 border ${
+                      newOwnerPassword === newOwnerConfirmPassword
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'
+                        : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60'
+                    }`}
+                  >
+                    {newOwnerPassword === newOwnerConfirmPassword ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span>Passwords match securely.</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>Passwords do not match yet.</span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* CARD 3: SUBSCRIPTION PLAN & TENANT PROVISIONING */}
+              <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-gray-200 dark:border-[#1A263D] shadow-xs dark:shadow-[0_0_20px_rgba(59,130,246,0.05)] space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+                  <h5 className="font-bold text-gray-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                    <KeyRound className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                    <span>3. Subscription Plan &amp; License Key</span>
+                  </h5>
+                  <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                    Active on Creation
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-gray-800 dark:text-slate-200 text-xs mb-1.5">
+                    Subscription Plan <span className="text-red-500 dark:text-pink-400">*</span>
+                  </label>
+                  <select
+                    value={newSubscriptionPlan}
+                    onChange={(e) => setNewSubscriptionPlan(e.target.value as '6_MONTHS' | 'YEARLY')}
+                    className="capitalize w-full px-3.5 py-2.5 bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 rounded-xl text-xs font-semibold text-gray-900 dark:text-purple-100 hover:bg-slate-50 dark:hover:bg-purple-500/30 outline-none focus:border-indigo-600 dark:focus:border-purple-400 cursor-pointer transition"
+                  >
+                    <option value="6_MONTHS" className="bg-white text-gray-900 dark:bg-[#120726] dark:text-purple-100">
+                      6 Months Plan
+                    </option>
+                    <option value="YEARLY" className="bg-white text-gray-900 dark:bg-[#120726] dark:text-purple-100">
+                      Yearly Plan (1 Year)
+                    </option>
+                  </select>
+
+                  <div className="mt-3 p-3 rounded-xl bg-indigo-50/70 dark:bg-gradient-to-br dark:from-slate-900 dark:via-indigo-950 dark:to-purple-950 border border-indigo-200/80 dark:border-indigo-600/40 text-[11px] font-mono text-slate-700 dark:text-purple-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                      Plan: <strong className="text-indigo-950 dark:text-white">{newSubscriptionPlan === '6_MONTHS' ? '6 Months' : 'Yearly'}</strong>
+                    </span>
+                    <span>
+                      Expires:{' '}
+                      <strong className="text-indigo-950 dark:text-white">
+                        {(() => {
+                          const d = new Date();
+                          if (newSubscriptionPlan === '6_MONTHS') {
+                            d.setMonth(d.getMonth() + 6);
+                          } else {
+                            d.setFullYear(d.getFullYear() + 1);
+                          }
+                          return d.toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          });
+                        })()}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-gray-500 dark:text-slate-400 leading-relaxed">
+                  Store defaults (invoices, barcodes, address &amp; taxes) are configured by the Store Owner on first login.
+                </p>
               </div>
             </form>
+
+            {/* MODAL FOOTER ALIGNED WITH PRODUCT FORM MODAL */}
+            <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900/90 dark:via-indigo-950/85 dark:to-slate-900 border-t border-gray-200 dark:border-purple-800/80 px-6 py-4 flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                onClick={() => setCreateModalOpen(false)}
+                className="btn-secondary px-4 py-2.5 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                form="add-new-store-form"
+                disabled={creatingStore}
+                style={{ color: '#ffffff' }}
+                className="btn-primary btn-pure-white px-6 py-2.5 text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50"
+              >
+                {creatingStore ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
+                    <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
+                      Creating Store...
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
+                    <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
+                      Create Store &amp; Owner
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Edit Store Subscription & App Key Modal */}
+      {/* Edit Store Subscription Modal */}
       {storeToEditSub && (
         <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="app-card bg-white dark:bg-[#111827] border border-slate-200 dark:border-purple-800/70 rounded-2xl max-w-md w-full p-6 shadow-2xl text-slate-900 dark:text-white">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-500/15 border border-purple-200 dark:border-purple-500/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                  <KeyRound className="w-4 h-4" />
+                  <Calendar className="w-4 h-4" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Subscription &amp; App Key
+                    Store Subscription
                   </h3>
                   <p className="text-xs font-mono text-purple-600 dark:text-purple-300">
                     {storeToEditSub.name}
@@ -3385,44 +4093,6 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
             </div>
 
             <form onSubmit={handleSaveSubscription} className="space-y-4 mt-4">
-              {/* App Key Display & Regenerate */}
-              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-purple-800/60 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Assigned Store App Key
-                  </span>
-                  <button
-                    type="button"
-                    disabled={regeneratingKeyId === storeToEditSub.id}
-                    onClick={() => handleRegenerateStoreKey(storeToEditSub)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition cursor-pointer disabled:opacity-50"
-                  >
-                    <RefreshCw
-                      className={`w-3 h-3 ${regeneratingKeyId === storeToEditSub.id ? 'animate-spin' : ''}`}
-                    />
-                    <span>
-                      {regeneratingKeyId === storeToEditSub.id ? 'Regenerating...' : 'Regenerate Key'}
-                    </span>
-                  </button>
-                </div>
-                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-mono text-xs font-bold text-purple-700 dark:text-purple-300">
-                  <span className="select-all">{storeToEditSub.appKey || 'APP-KEY-ACTIVE'}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (storeToEditSub.appKey && navigator.clipboard) {
-                        navigator.clipboard.writeText(storeToEditSub.appKey).catch(() => {});
-                        setSuccessMessage(`Copied App Key: ${storeToEditSub.appKey}`);
-                      }
-                    }}
-                    className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-purple-600 dark:hover:text-white cursor-pointer"
-                    title="Copy App Key"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
               {/* Subscription Plan Dropdown */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -3619,6 +4289,178 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                   <span>{deletingStore ? 'Deleting...' : 'Delete Permanently'}</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SuperAdmin Platform SQL Import Modal */}
+      {importSqlModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto"
+          onClick={() => !importingPlatformSql && setImportSqlModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-3xl bg-white dark:bg-[#131B2E] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-200 dark:border-purple-800/80 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 border-b border-slate-200 dark:border-purple-800/80 px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-purple-600/10 dark:bg-purple-500/20 border border-purple-500/25 dark:border-purple-400/40 flex items-center justify-center text-purple-600 dark:text-purple-300 shrink-0">
+                  <Database className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 dark:text-white tracking-tight">
+                    SuperAdmin Platform SQL Import &amp; Multi-Store Seed
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-purple-200/80">
+                    Upload a PostgreSQL <code className="font-mono">.sql</code> dump or 1-click import the 24-store, 2,400-SKU dataset
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={importingPlatformSql}
+                onClick={() => setImportSqlModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:text-purple-300 dark:hover:text-white rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-4 text-xs bg-slate-50/50 dark:bg-[#070B14]">
+              {importSqlError && (
+                <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 flex items-start gap-2.5 font-medium">
+                  <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <span>{importSqlError}</span>
+                </div>
+              )}
+
+              {/* Quick Actions Bar: Upload .SQL, 1-Click Load & Import 24-Store SQL, Download Sample .SQL */}
+              <div className="p-4 rounded-2xl bg-white dark:bg-[#111827] border border-slate-200 dark:border-indigo-500/25 space-y-3 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
+                      Multi-Store SQL Dataset (<code className="font-mono text-purple-600 dark:text-purple-300">/multi-store-pos-import.sql</code>)
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Includes 24 stores, company settings, 2,400 store-scoped SKUs, 240 purchases, purchase returns, 240 customers &amp; 480 sales.
+                    </p>
+                  </div>
+                  <a
+                    href="/multi-store-pos-import.sql"
+                    download="multi-store-pos-import.sql"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download .SQL File</span>
+                  </a>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <input
+                    ref={sqlFileInputRef}
+                    type="file"
+                    accept=".sql,text/plain"
+                    onChange={handleSqlFileUpload}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => sqlFileInputRef.current?.click()}
+                    disabled={importingPlatformSql || loadingSampleSql}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-sky-500/15 dark:hover:bg-sky-500/25 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-500/30 font-bold text-xs cursor-pointer transition"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Choose .SQL File from Computer</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleLoadMultiStoreSampleSql(false)}
+                    disabled={importingPlatformSql || loadingSampleSql}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-500/15 dark:hover:bg-purple-500/25 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 font-bold text-xs cursor-pointer transition"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>{loadingSampleSql ? 'Loading SQL...' : 'Load 24-Store SQL into Editor'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleLoadMultiStoreSampleSql(true)}
+                    disabled={importingPlatformSql || loadingSampleSql}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-sm cursor-pointer transition disabled:opacity-50"
+                  >
+                    <Database className="w-3.5 h-3.5" />
+                    <span>
+                      {importingPlatformSql
+                        ? 'Importing 24 Stores & 2,400 SKUs...'
+                        : '1-Click Import 24-Store Dataset Now'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* SQL Script Editor */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-700 dark:text-slate-200 text-xs">
+                    SQL Statements {sqlFileName ? `— ${sqlFileName}` : ''}
+                  </label>
+                  {sqlImportText && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSqlImportText('');
+                        setSqlFileName(null);
+                      }}
+                      className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+                    >
+                      Clear Editor
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  rows={10}
+                  value={sqlImportText}
+                  onChange={(e) => setSqlImportText(e.target.value)}
+                  placeholder="-- Paste PostgreSQL INSERT / UPDATE / CREATE statements here, or click 'Load 24-Store SQL into Editor' above..."
+                  className="w-full p-3.5 rounded-xl bg-white dark:bg-[#0D1322] border border-slate-200 dark:border-indigo-500/30 font-mono text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900/90 dark:via-indigo-950/85 dark:to-slate-900 border-t border-slate-200 dark:border-purple-800/80 px-6 py-4 flex items-center justify-between shrink-0">
+              <button
+                type="button"
+                disabled={importingPlatformSql}
+                onClick={() => setImportSqlModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={importingPlatformSql || !sqlImportText.trim()}
+                onClick={() => handleExecutePlatformSqlImport()}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:to-indigo-800 text-white text-xs font-bold shadow-md cursor-pointer disabled:opacity-50"
+              >
+                {importingPlatformSql ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Executing SQL Import...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Execute &amp; Import SQL</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

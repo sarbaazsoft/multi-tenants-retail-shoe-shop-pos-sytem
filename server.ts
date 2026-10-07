@@ -9,7 +9,10 @@ dotenv.config();
 
 // Database & Seed
 import { pgClient, dbInfo, txStorage } from './src/db/index.ts';
-import { ensureSaasControlPlane } from './src/db/schemaInit.ts';
+import {
+  ensureSaasControlPlane,
+  isSaasControlPlaneInitialized,
+} from './src/db/schemaInit.ts';
 
 // Shared-Domain Multi-Tenant Routing Middleware
 import { tenantRoutingMiddleware } from './src/server/middleware/tenantMiddleware.ts';
@@ -159,7 +162,6 @@ app.get('/admin/manifest.webmanifest', (_req, res) => {
 });
 
 // Initialize PostgreSQL schema + SaaS Multi-Tenant Control Plane on cold start
-let dbInitialized = false;
 app.use(async (req, res, next) => {
   if (req.path.startsWith('/api/install/')) {
     try {
@@ -167,7 +169,7 @@ app.use(async (req, res, next) => {
     } catch (err) {
       return res.status(503).json({ code: 'DATABASE_UNAVAILABLE', error: 'Could not connect to the configured database.' });
     }
-  } else if (req.path.startsWith('/api/') && !dbInitialized) {
+  } else if (req.path.startsWith('/api/') && !isSaasControlPlaneInitialized()) {
     try {
       await pgClient.waitReady;
       const installStatus = await checkInstallationStatus();
@@ -180,7 +182,6 @@ app.use(async (req, res, next) => {
         });
       }
       await ensureSaasControlPlane();
-      dbInitialized = true;
     } catch (err: any) {
       console.error('Database initialization error on request:', err);
       return res.status(503).json({ code: 'DATABASE_INITIALIZATION_FAILED', error: err?.message || 'Database initialization failed.' });

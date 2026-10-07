@@ -22,6 +22,10 @@ import { InvoicePrintModal } from '../pos/InvoicePrintModal.tsx';
 import { FinancialSummaryPrintModal } from './FinancialSummaryPrintModal.tsx';
 import { formatStockPrice } from '../../utils/priceFormat.ts';
 import { StatCard, triggerStatRecount } from '../common/StatCard.tsx';
+import {
+  RetailShoeMetrics,
+  useDataPerIntersectionObserver,
+} from '../common/RetailShoeMetrics.tsx';
 import { useScrollActiveTab } from '../../hooks/useScrollActiveTab.ts';
 
 interface ReportsDashboardProps {
@@ -36,6 +40,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({
   companySettings,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const reportsContainerRef = useRef<HTMLDivElement | null>(null);
 
   const { containerRef: reportsTabContainerRef } = useScrollActiveTab<HTMLDivElement>(activeTab, {
     padding: 16,
@@ -160,11 +165,22 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({
 
   const allTimeRevenue = parseFloat(dashboardData?.allTime?.totalRevenue || 0);
   const allTimeSalesCount = parseInt(dashboardData?.allTime?.salesCount || 0, 10);
+  const totalProducts = parseInt(dashboardData?.inventory?.totalProducts || 0, 10);
+  const sevenDaySalesTotal = Array.isArray(dashboardData?.sevenDaysSales)
+    ? dashboardData.sevenDaysSales.reduce((sum: number, d: any) => sum + (parseFloat(d.amount) || 0), 0)
+    : 0;
   const lowStockCount =
     dashboardData?.inventory?.lowStockCount ??
     dashboardData?.lowStockAlerts?.length ??
     dashboardData?.lowStockProducts?.length ??
     0;
+
+  useDataPerIntersectionObserver(reportsContainerRef, [
+    isLoading,
+    activeTab,
+    dashboardData,
+    profitLossData,
+  ]);
 
   // Filtered Sales History
   const filteredSales = useMemo(() => {
@@ -253,7 +269,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({
   };
 
   return (
-    <div className="space-y-4 p-4 max-w-7xl mx-auto text-xs">
+    <div ref={reportsContainerRef} className="space-y-4 p-4 max-w-7xl mx-auto text-xs">
       {/* Top Banner & Action */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -609,6 +625,20 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({
       {/* TAB CONTENT: 1. EXECUTIVE OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* Dynamic Retail Shoe Metrics (Sales Target, Category Breakdown, Inventory Clearance) */}
+          <RetailShoeMetrics
+            metrics={dashboardData?.retailShoeMetrics}
+            todaySales={todayRevenue}
+            totalProducts={totalProducts}
+            lowStockCount={lowStockCount}
+            allTimeRevenue={allTimeRevenue}
+            sevenDaySalesTotal={sevenDaySalesTotal}
+            topSelling={topSelling}
+            currency={currencySymbol}
+            loading={isLoading}
+            variant="reports"
+          />
+
           {/* 7-Day Sales Trend Bar Visualizer */}
           {dashboardData?.sevenDaysSales && dashboardData.sevenDaysSales.length > 0 && (
             <motion.div

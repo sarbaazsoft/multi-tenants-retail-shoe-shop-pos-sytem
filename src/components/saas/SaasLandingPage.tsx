@@ -938,150 +938,215 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
         </div>
       </section>
 
-      {/* MODAL 1: GET STARTED / STORE SUBSCRIPTION REQUEST */}
+      {/* MODAL 1: GET STARTED / STORE SUBSCRIPTION REQUEST (Aligned with ProductFormModal Header, Cards & Footer) */}
       {showRequestModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 sm:p-8 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
-            <button
-              type="button"
-              onClick={() => setShowRequestModal(false)}
-              className="absolute top-5 right-5 w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="mb-5">
-              <span className="inline-block px-2.5 py-1 rounded-full bg-[#DCEBFF] text-[#0066FF] text-[11px] font-extrabold uppercase tracking-wider mb-1.5">
-                Start Your ShoePOS Store
-              </span>
-              <h3 className="text-xl font-extrabold text-[#0A1633]">
-                Register Your Shoe Store
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Tell us about your shop and get started with sales and stock management.
-              </p>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto"
+          onClick={() => setShowRequestModal(false)}
+        >
+          <div
+            className="relative w-full max-w-xl bg-white dark:bg-[#131B2E] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] border border-slate-200 dark:border-purple-800/80 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* MODAL HEADER ALIGNED WITH PRODUCT FORM MODAL */}
+            <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 border-b border-slate-200 dark:border-purple-800/80 text-slate-800 dark:text-white px-6 py-4 shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:bg-purple-500/20 dark:text-purple-300 border border-blue-500/20 dark:border-purple-400/30 flex items-center justify-center font-bold shadow-2xs shrink-0">
+                    <Store className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-slate-900 dark:text-white tracking-tight">
+                      Register Your Shoe Store
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-purple-200/80">
+                      Tell us about your shop and get started with sales and stock management
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRequestModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:text-purple-300 dark:hover:text-white rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {submitError && (
-              <div className="mb-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
-                {submitError}
-              </div>
-            )}
-
             {submitSuccess ? (
-              <div className="p-5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-3">
-                <div className="flex items-center gap-2 font-bold text-sm text-emerald-700">
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span>Store Request Submitted!</span>
+              <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs bg-slate-50/50 dark:bg-[#070B14]">
+                <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs space-y-3">
+                  <div className="flex items-center gap-2 font-bold text-sm text-emerald-700 dark:text-emerald-300">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span>Store Request Submitted!</span>
+                  </div>
+                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                    {submitSuccess.message}
+                  </p>
                 </div>
-                <p className="text-xs text-emerald-800 leading-relaxed">
-                  {submitSuccess.message}
-                </p>
-                <div className="flex flex-wrap gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRequestModal(false);
-                      onOpenSuperAdmin();
-                    }}
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0066FF] hover:bg-[#0052CC] text-white text-xs font-bold transition cursor-pointer"
-                  >
-                    <span>Open SuperAdmin C-Panel to Approve</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+
+                <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900/90 dark:via-indigo-950/85 dark:to-slate-900 border-t border-gray-200 dark:border-purple-800/80 -mx-6 -mb-6 px-6 py-4 flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() => {
                       setSubmitSuccess(null);
                       setShowRequestModal(false);
                     }}
-                    className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-xs font-bold cursor-pointer"
+                    className="btn-secondary px-4 py-2.5 text-xs font-semibold cursor-pointer"
                   >
                     Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRequestModal(false);
+                      onOpenSuperAdmin();
+                    }}
+                    style={{ color: '#ffffff' }}
+                    className="btn-primary btn-pure-white px-5 py-2.5 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-md"
+                  >
+                    <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
+                      Open SuperAdmin C-Panel to Approve
+                    </span>
+                    <ArrowRight className="w-3.5 h-3.5 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
                   </button>
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleSubmitRequest} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Store Name *
-                  </label>
-                  <div className="relative">
-                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      required
-                      value={storeName}
-                      onChange={(e) => setStoreName(toTitleCaseLive(e.target.value))}
-                      placeholder="e.g. Metro Footwear"
-                      className="capitalize w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:border-[#0066FF]"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Owner Email *
-                    </label>
-                    <div className="relative">
-                      <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type="email"
-                        required
-                        value={ownerEmail}
-                        onChange={(e) => setOwnerEmail(e.target.value)}
-                        placeholder="owner@metroshoes.pk"
-                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:border-[#0066FF]"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Phone / WhatsApp
-                    </label>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                      <input
-                        type="text"
-                        value={ownerPhone}
-                        onChange={(e) => setOwnerPhone(e.target.value)}
-                        placeholder="+92 300 1234567"
-                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:border-[#0066FF]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Subscription Plan
-                  </label>
-                  <select
-                    value={plan}
-                    onChange={(e) => setPlan(e.target.value)}
-                    className="capitalize w-full px-3 py-2 rounded-xl border border-slate-300 text-sm text-slate-900 focus:outline-none focus:border-[#0066FF]"
-                  >
-                    <option value="6_MONTHS_RS_10000">6 Months — Rs. 10,000</option>
-                    <option value="1_YEAR_RS_18000">1 Year — Rs. 18,000 (Most Popular)</option>
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-purple-600/25 transition-all cursor-pointer flex items-center justify-center gap-2"
+              <>
+                <form
+                  id="landing-store-request-form"
+                  onSubmit={handleSubmitRequest}
+                  className="flex-1 overflow-y-auto p-6 space-y-5 text-xs bg-slate-50/50 dark:bg-[#070B14]"
                 >
-                  <span>
-                    {submitting
-                      ? 'Submitting Request...'
-                      : 'Submit Store Request'}
-                  </span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </form>
+                  {submitError && (
+                    <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs font-medium">
+                      {submitError}
+                    </div>
+                  )}
+
+                  {/* CARD 1: STORE & OWNER CONTACT DETAILS */}
+                  <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-gray-200 dark:border-[#1A263D] shadow-xs dark:shadow-[0_0_20px_rgba(59,130,246,0.05)] space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+                      <h5 className="font-bold text-gray-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                        <Building2 className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                        <span>1. Store &amp; Contact Information</span>
+                      </h5>
+                      <span className="text-[11px] text-gray-400 dark:text-slate-500 font-medium">
+                        Shop Details
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-800 dark:text-slate-200 mb-1.5">
+                        Store Name <span className="text-red-500 dark:text-pink-400">*</span>
+                      </label>
+                      <div className="relative">
+                        <Building2 className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          required
+                          value={storeName}
+                          onChange={(e) => setStoreName(toTitleCaseLive(e.target.value))}
+                          placeholder="e.g. Metro Footwear"
+                          className="capitalize w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 text-xs font-medium text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-800 dark:text-slate-200 mb-1.5">
+                          Owner Email <span className="text-red-500 dark:text-pink-400">*</span>
+                        </label>
+                        <div className="relative">
+                          <Mail className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="email"
+                            required
+                            value={ownerEmail}
+                            onChange={(e) => setOwnerEmail(e.target.value)}
+                            placeholder="owner@metroshoes.pk"
+                            className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-800 dark:text-slate-200 mb-1.5">
+                          Phone / WhatsApp
+                        </label>
+                        <div className="relative">
+                          <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={ownerPhone}
+                            onChange={(e) => setOwnerPhone(e.target.value)}
+                            placeholder="+92 300 1234567"
+                            className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CARD 2: SUBSCRIPTION PLAN */}
+                  <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-gray-200 dark:border-[#1A263D] shadow-xs dark:shadow-[0_0_20px_rgba(59,130,246,0.05)] space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+                      <h5 className="font-bold text-gray-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                        <Calendar className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                        <span>2. Subscription Plan</span>
+                      </h5>
+                      <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                        Full POS Access
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-800 dark:text-slate-200 mb-1.5">
+                        Select Plan
+                      </label>
+                      <select
+                        value={plan}
+                        onChange={(e) => setPlan(e.target.value)}
+                        className="capitalize w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 text-xs font-semibold text-gray-900 dark:text-purple-100 focus:outline-none focus:border-indigo-600 dark:focus:border-purple-400 cursor-pointer transition"
+                      >
+                        <option value="6_MONTHS_RS_10000" className="bg-white text-gray-900 dark:bg-[#120726] dark:text-purple-100">
+                          6 Months — Rs. 10,000
+                        </option>
+                        <option value="1_YEAR_RS_18000" className="bg-white text-gray-900 dark:bg-[#120726] dark:text-purple-100">
+                          1 Year — Rs. 18,000 (Most Popular)
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                </form>
+
+                {/* MODAL FOOTER ALIGNED WITH PRODUCT FORM MODAL */}
+                <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900/90 dark:via-indigo-950/85 dark:to-slate-900 border-t border-gray-200 dark:border-purple-800/80 px-6 py-4 flex items-center justify-between shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowRequestModal(false)}
+                    className="btn-secondary px-4 py-2.5 text-xs font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    form="landing-store-request-form"
+                    disabled={submitting}
+                    style={{ color: '#ffffff' }}
+                    className="btn-primary btn-pure-white px-6 py-2.5 text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50"
+                  >
+                    <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
+                      {submitting ? 'Submitting Request...' : 'Submit Store Request'}
+                    </span>
+                    <ArrowRight className="w-4 h-4 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

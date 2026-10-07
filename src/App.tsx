@@ -82,6 +82,9 @@ function detectInitialRouteFromLocation(): {
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     return { mode: 'SUPERADMIN', tenantIdParam };
   }
+  if (pathname === '/install' || pathname.startsWith('/install/')) {
+    return { mode: 'INSTALLER', tenantIdParam };
+  }
 
   const pathTab = pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
   const queryTab = searchParams.get('tab')?.toLowerCase() || '';
@@ -101,10 +104,11 @@ function detectInitialRouteFromLocation(): {
 export default function App() {
   const initialRoute = detectInitialRouteFromLocation();
   const initialSectionPath = APP_TAB_ROUTES.has(window.location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase());
+  const hasResetTokenParam = new URLSearchParams(window.location.search).has('resetToken');
   const [saasMode, setSaasMode] = useState<SaasRouteMode>(initialRoute.mode);
   const [activeTenant, setActiveTenant] = useState<TenantInfo | null>(null);
   const [availableTenants, setAvailableTenants] = useState<TenantInfo[]>([]);
-  const [globalLoginOpen, setGlobalLoginOpen] = useState(false);
+  const [globalLoginOpen, setGlobalLoginOpen] = useState(hasResetTokenParam);
   const [storeLoginTarget, setStoreLoginTarget] = useState<TenantInfo | null>(null);
   const [tenantIdNotice, setTenantIdNotice] = useState('');
   const tenantIdParam = initialRoute.tenantIdParam;
@@ -318,7 +322,12 @@ export default function App() {
     setIsInitializing(true);
     try {
       const installStatus = await api.install.status().catch(() => null);
-      if (!installStatus?.installed) {
+      if (
+        !installStatus?.installed ||
+        window.location.pathname === '/install' ||
+        window.location.pathname.startsWith('/install/') ||
+        overrideMode === 'INSTALLER'
+      ) {
         setSaasMode('INSTALLER');
         setGlobalLoginOpen(false);
         if (window.location.pathname !== '/install') window.history.replaceState({}, '', '/install');
@@ -746,15 +755,17 @@ export default function App() {
       {saasMode === 'LANDING' && (
         isInitializing ? (
           <PublicLayout
-            storeName={effectiveStoreName}
+            storeName={tenantIdParam ? effectiveStoreName : 'ShoePOS Platform'}
             badgeText="Connecting..."
             badgeVariant="connecting"
-            subtitle="Preparing your workspace"
+            subtitle={tenantIdParam ? 'Preparing your workspace' : 'Loading platform workspace'}
             dbText="Secure tenant sign-in"
           >
             <div className="bg-white/95 dark:bg-[#131B2E]/95 rounded-3xl p-8 shadow-2xl border border-white/30 dark:border-purple-800/60 flex flex-col items-center max-w-sm w-full mx-4 text-center">
               <div className="w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin" />
-              <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-4">Loading your store...</p>
+              <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-4">
+                {tenantIdParam ? 'Loading your store...' : 'Loading platform...'}
+              </p>
             </div>
           </PublicLayout>
         ) : globalLoginOpen ? (
@@ -808,16 +819,31 @@ export default function App() {
 
       {/* 2. SUPERADMIN CONTROL PANEL (`/admin`) */}
       {saasMode === 'SUPERADMIN' && (
-        <SuperAdminControlPanel
-          currentUser={currentUser}
-          onUserAuthenticated={(user) => {
-            setCurrentUser(user);
-          }}
-          onLogout={handleLogout}
-          onOpenStore={(slug) => handleNavigateDomain({ mode: 'TENANT', slug })}
-          onOpenOnboarding={(slug) => handleNavigateDomain({ mode: 'ONBOARDING', slug })}
-          onTenantsUpdated={() => refreshTenantDirectory('SUPERADMIN')}
-        />
+        isInitializing ? (
+          <PublicLayout
+            storeName="POS SaaS C-Panel"
+            badgeText="Connecting..."
+            badgeVariant="connecting"
+            subtitle="Loading platform control plane"
+            dbText="PostgreSQL 16 • Control Plane"
+          >
+            <div className="bg-white/95 dark:bg-[#131B2E]/95 rounded-3xl p-8 shadow-2xl border border-white/30 dark:border-purple-800/60 flex flex-col items-center max-w-sm w-full mx-4 text-center">
+              <div className="w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-4">Loading platform...</p>
+            </div>
+          </PublicLayout>
+        ) : (
+          <SuperAdminControlPanel
+            currentUser={currentUser}
+            onUserAuthenticated={(user) => {
+              setCurrentUser(user);
+            }}
+            onLogout={handleLogout}
+            onOpenStore={(slug) => handleNavigateDomain({ mode: 'TENANT', slug })}
+            onOpenOnboarding={(slug) => handleNavigateDomain({ mode: 'ONBOARDING', slug })}
+            onTenantsUpdated={() => refreshTenantDirectory('SUPERADMIN')}
+          />
+        )
       )}
 
       {/* 3. UNKNOWN STORE FALLBACK SCREEN (404 TENANT) */}
@@ -1104,7 +1130,6 @@ export default function App() {
                           currentUser={currentUser}
                           companySettings={{
                             ...companySettings,
-                            appKey: companySettings?.appKey || activeTenant?.appKey,
                             subscriptionPlan: companySettings?.subscriptionPlan || activeTenant?.subscriptionPlan,
                             subscriptionStartDate: companySettings?.subscriptionStartDate || activeTenant?.subscriptionStartDate,
                             subscriptionEndDate: companySettings?.subscriptionEndDate || activeTenant?.subscriptionEndDate,

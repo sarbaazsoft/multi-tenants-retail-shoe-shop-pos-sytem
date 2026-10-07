@@ -2,7 +2,6 @@ import type { Request, Response, NextFunction } from 'express';
 import { pgClient } from '../../db/index.ts';
 import {
   ensureSaasControlPlane,
-  generateUniqueAppKey,
   normalizeSubscriptionPlan,
   calculateSubscriptionEndDate,
 } from '../../db/schemaInit.ts';
@@ -16,7 +15,6 @@ export interface TenantRouteResolution {
     slug: string;
     name: string;
     status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
-    appKey: string;
     subscriptionPlan: '6_MONTHS' | 'YEARLY' | string;
     subscriptionStartDate: string;
     subscriptionEndDate: string;
@@ -29,6 +27,74 @@ export interface TenantRouteResolution {
     currency: string;
     onboardingCompleted: boolean;
   } | null;
+}
+
+const MIDDLEWARE_ONLINE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes active middleware session window
+const onlineTenantPresence = new Map<
+  number,
+  { tenantId: number; lastSeenAt: number; lastRoute: string }
+>();
+
+export function recordTenantMiddlewarePresence(tenantId: number, route: string = '/api'): void {
+  const cleanId = Number(tenantId);
+  if (!Number.isSafeInteger(cleanId) || cleanId <= 0) return;
+  onlineTenantPresence.set(cleanId, {
+    tenantId: cleanId,
+    lastSeenAt: Date.now(),
+    lastRoute: route,
+  });
+}
+
+export function removeTenantMiddlewarePresence(tenantId: number): void {
+  const cleanId = Number(tenantId);
+  if (!Number.isSafeInteger(cleanId) || cleanId <= 0) return;
+  onlineTenantPresence.delete(cleanId);
+}
+
+export function isTenantOnlineInMiddleware(
+  tenantId: number,
+  status?: string,
+  subscriptionStatus?: string
+): boolean {
+  const cleanId = Number(tenantId);
+  if (!Number.isSafeInteger(cleanId) || cleanId <= 0) return false;
+  if (
+    String(status || '').toUpperCase() === 'SUSPENDED' ||
+    String(status || '').toUpperCase() === 'EXPIRED' ||
+    String(subscriptionStatus || '').toUpperCase() === 'SUSPENDED' ||
+    String(subscriptionStatus || '').toUpperCase() === 'EXPIRED'
+  ) {
+    onlineTenantPresence.delete(cleanId);
+    return false;
+  }
+
+  // Prune any expired presence entries first
+  const now = Date.now();
+  for (const [tid, entry] of onlineTenantPresence.entries()) {
+    if (now - entry.lastSeenAt > MIDDLEWARE_ONLINE_WINDOW_MS) {
+      onlineTenantPresence.delete(tid);
+    }
+  }
+
+  if (onlineTenantPresence.size > 0) {
+    return onlineTenantPresence.has(cleanId);
+  }
+
+  // When no explicit store session heartbeat has been recorded since server start,
+  // any tenant whose middleware routing mode is TENANT_ACTIVE is online in middleware
+  return (
+    String(status || 'ACTIVE').toUpperCase() === 'ACTIVE' &&
+    String(subscriptionStatus || 'ACTIVE').toUpperCase() === 'ACTIVE'
+  );
+}
+
+export function getTenantMiddlewareLastSeen(tenantId: number): string | null {
+  const cleanId = Number(tenantId);
+  const entry = onlineTenantPresence.get(cleanId);
+  if (!entry || Date.now() - entry.lastSeenAt > MIDDLEWARE_ONLINE_WINDOW_MS) {
+    return null;
+  }
+  return new Date(entry.lastSeenAt).toISOString();
 }
 
 /** Resolve tenant identity from the shared tenantId selector. */
@@ -59,7 +125,27 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
     };
   }
 
-  const tenantId = Number(req.query?.tenantId ?? req.query?.tenant_id ?? req.headers['x-tenant-id']);
+  let rawTenantId: any = req.query?.tenantId ?? req.query?.tenant_id ?? req.headers['x-tenant-id'];
+  if (!rawTenantId) {
+    const tokenHeader =
+      (typeof req.headers['x-auth-token'] === 'string' && req.headers['x-auth-token']) ||
+      (typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7)
+        : '');
+    if (tokenHeader) {
+      try {
+        const parts = tokenHeader.trim().replace(/^Bearer\s+/i, '').split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+          if (payload && String(payload.role || '').toUpperCase() !== 'SUPERADMIN' && Number(payload.tenantId) > 0) {
+            rawTenantId = payload.tenantId;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  const tenantId = Number(rawTenantId);
   if (!Number.isSafeInteger(tenantId) || tenantId <= 0) {
     return {
       mode: 'LANDING',
@@ -74,7 +160,6 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
     slug: string;
     name: string;
     status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
-    app_key: string;
     subscription_plan: string;
     subscription_start_date: string;
     subscription_end_date: string;
@@ -87,7 +172,7 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
     currency: string;
     onboarding_completed: boolean;
   }>(
-    `SELECT t.id, t.slug, t.name, t.status, t.app_key, t.subscription_plan,
+    `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
             t.subscription_start_date, t.subscription_end_date, t.subscription_status,
             t.theme_color, t.background_color, t.onboarding_completed,
             COALESCE(NULLIF(cs.logo, ''), '/pwa-512x512.png') AS logo_url,
@@ -111,7 +196,6 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
   }
 
   const row = tenantRes.rows[0];
-  let effectiveAppKey = row.app_key && String(row.app_key).trim() ? String(row.app_key).trim() : '';
   const effectivePlan = normalizeSubscriptionPlan(
     row.subscription_plan || (row.slug === 'mystore' || row.slug === 'apex-boots' ? '6_MONTHS' : 'YEARLY')
   );
@@ -130,22 +214,17 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
     effectiveSubscriptionStatus = 'SUSPENDED';
   }
 
-  if (!effectiveAppKey || !row.subscription_start_date || !row.subscription_end_date || String(row.subscription_status).toUpperCase() !== effectiveSubscriptionStatus) {
-    if (!effectiveAppKey) {
-      effectiveAppKey = await generateUniqueAppKey();
-    }
+  if (!row.subscription_start_date || !row.subscription_end_date || String(row.subscription_status).toUpperCase() !== effectiveSubscriptionStatus) {
     await pgClient
       .query(
         `UPDATE tenants
-         SET app_key = $1,
-             subscription_plan = $2,
-             subscription_start_date = $3,
-             subscription_end_date = $4,
-             subscription_status = $5,
+         SET subscription_plan = $1,
+             subscription_start_date = $2,
+             subscription_end_date = $3,
+             subscription_status = $4,
              updated_at = NOW()
-         WHERE id = $6`,
+         WHERE id = $5`,
         [
-          effectiveAppKey,
           effectivePlan,
           effectiveStartDt.toISOString(),
           effectiveEndDt.toISOString(),
@@ -161,7 +240,6 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
     slug: row.slug,
     name: row.name,
     status: row.status,
-    appKey: effectiveAppKey,
     subscriptionPlan: effectivePlan,
     subscriptionStartDate: effectiveStartDt.toISOString(),
     subscriptionEndDate: effectiveEndDt.toISOString(),
@@ -240,6 +318,18 @@ export async function tenantRoutingMiddleware(
       res.setHeader('X-Tenant-Id', String(resolution.tenant.id));
       res.setHeader('X-Tenant-Status', resolution.tenant.status);
       res.setHeader('X-Subscription-Status', resolution.tenant.subscriptionStatus);
+
+      if (
+        resolution.mode === 'TENANT_ACTIVE' &&
+        !req.path.startsWith('/api/superadmin')
+      ) {
+        recordTenantMiddlewarePresence(resolution.tenant.id, req.path);
+      } else if (
+        resolution.mode === 'TENANT_SUSPENDED' ||
+        resolution.mode === 'TENANT_EXPIRED'
+      ) {
+        removeTenantMiddlewarePresence(resolution.tenant.id);
+      }
     }
 
     // Real-time middleware enforcement: block API calls to expired or suspended tenants (except superadmin, auth & saas resolution)

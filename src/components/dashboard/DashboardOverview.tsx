@@ -17,6 +17,11 @@ import { api } from '../../services/api.ts';
 import { formatCurrency } from '../../utils/priceFormat.ts';
 import { BrandLogo } from '../common/BrandLogo.tsx';
 import { StatCard, triggerStatRecount } from '../common/StatCard.tsx';
+import {
+  RetailShoeMetrics,
+  useDataPerIntersectionObserver,
+  type RetailShoeMetricsData,
+} from '../common/RetailShoeMetrics.tsx';
 
 interface DashboardOverviewProps {
   currentUser: any;
@@ -32,10 +37,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState<'7days' | 'month' | 'year'>('7days');
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+  const dashboardContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Initial data accurately reflecting metrics from reference design with dynamic fallback
   const [dashboardData, setDashboardData] = useState<{
     todaySales: number;
+    allTimeRevenue: number;
     totalProducts: number;
     totalCustomers: number;
     lowStockCount: number;
@@ -69,8 +76,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       percentage: number;
       subtitle: string;
     }[];
+    retailShoeMetrics?: RetailShoeMetricsData | null;
   }>({
     todaySales: 0,
+    allTimeRevenue: 0,
     totalProducts: 0,
     totalCustomers: 0,
     lowStockCount: 0,
@@ -79,6 +88,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     recentTransactions: [],
     topSelling: [],
     topBrands: [],
+    retailShoeMetrics: null,
   });
 
   const currency =
@@ -95,6 +105,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       if (res) {
         setDashboardData({
           todaySales: Number(res.today?.totalSales) || 0,
+          allTimeRevenue: Number(res.allTime?.totalRevenue) || 0,
           totalProducts: Number(res.inventory?.totalProducts) || 0,
           totalCustomers: Number(res.customers?.totalCount) || 0,
           lowStockCount: Number(res.inventory?.lowStockCount) || 0,
@@ -141,6 +152,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 subtitle: b.subtitle || `${b.soldCount || 0} units`,
               }))
             : [],
+          retailShoeMetrics: res.retailShoeMetrics || null,
         });
       }
     } catch (err) {
@@ -216,8 +228,18 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const salesAreaPath = points.length > 0 && salesLinePath ? `${salesLinePath} L ${lastX},${baselineY} L ${firstX},${baselineY} Z` : '';
   const txAreaPath = points.length > 0 && txLinePath ? `${txLinePath} L ${lastX},${baselineY} L ${firstX},${baselineY} Z` : '';
 
+  const sevenDaySalesTotal = dashboardData.sevenDaySales.reduce(
+    (sum, d) => sum + (Number(d.amount) || 0),
+    0
+  );
+
+  useDataPerIntersectionObserver(dashboardContainerRef, [loading, dashboardData]);
+
   return (
-    <div className="p-4 sm:p-6 lg:p-7 space-y-6 max-w-7xl mx-auto select-none bg-[#F8FAFC] dark:bg-[#0A0E1A] min-h-screen text-slate-800 dark:text-slate-100 transition-colors">
+    <div
+      ref={dashboardContainerRef}
+      className="p-4 sm:p-6 lg:p-7 space-y-6 max-w-7xl mx-auto select-none bg-[#F8FAFC] dark:bg-[#0A0E1A] min-h-screen text-slate-800 dark:text-slate-100 transition-colors"
+    >
       {/* DASHBOARD HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -341,6 +363,21 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           duration={1200}
         />
       </div>
+
+      {/* DYNAMIC RETAIL SHOE METRICS (Sales Target, Category Breakdown, Inventory Clearance) */}
+      <RetailShoeMetrics
+        metrics={dashboardData.retailShoeMetrics}
+        todaySales={dashboardData.todaySales}
+        totalProducts={dashboardData.totalProducts}
+        lowStockCount={dashboardData.lowStockCount}
+        allTimeRevenue={dashboardData.allTimeRevenue}
+        sevenDaySalesTotal={sevenDaySalesTotal}
+        topSelling={dashboardData.topSelling}
+        currency={currency}
+        loading={loading}
+        onNavigate={onNavigate}
+        variant="dashboard"
+      />
 
       {/* ROW 2: 3 CARDS (Sales Overview + Best Selling Brands + Best Selling Products) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5">
@@ -578,8 +615,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                           strokeLinecap="round"
                           fill="none"
                           strokeDasharray={circumference}
-                          strokeDashoffset={circumference * (1 - pct / 100)}
-                          className={`transition-all duration-500 ${idx === 0 ? 'neon-glow-blue' : ''}`}
+                          strokeDashoffset={circumference}
+                          data-per={pct}
+                          data-per-role="donut"
+                          data-circumference={circumference}
+                          data-stagger-index={idx}
+                          className={`${idx === 0 ? 'neon-glow-blue' : ''}`}
                         />
                       </svg>
                       {/* Brand Logo or Placeholder in center of ring */}

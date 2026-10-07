@@ -1,6 +1,7 @@
 // Central API service with JWT token injection, tenant isolation, and offline catalog fallback
 import {
   cacheCatalogOffline,
+  deleteCachedProductOffline,
   lookupCachedProductOffline,
   searchCachedProductsOffline,
 } from '../utils/offlineDb.ts';
@@ -46,9 +47,15 @@ export function getActiveTenantId(): number | null {
   const token = getAuthToken();
   const payload = token ? decodeTokenPayload(token) : null;
   const tokenRole = String(payload?.role || '').toUpperCase();
-  const tokenTenantId = Number(payload?.tenantId);
+  const tokenTenantId = Number(payload?.tenantId ?? payload?.tenant_id);
   if (tokenRole && tokenRole !== 'SUPERADMIN' && Number.isSafeInteger(tokenTenantId) && tokenTenantId > 0) {
     return tokenTenantId;
+  }
+  const storedUser = getStoredUser();
+  const storedRole = String(storedUser?.originalRole || storedUser?.role || '').toUpperCase();
+  const storedTenantId = Number(storedUser?.tenantId ?? storedUser?.tenant_id);
+  if (storedRole && storedRole !== 'SUPERADMIN' && Number.isSafeInteger(storedTenantId) && storedTenantId > 0) {
+    return storedTenantId;
   }
   const queryId = typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('tenantId')) : 0;
   if (Number.isSafeInteger(queryId) && queryId > 0) return queryId;
@@ -348,23 +355,12 @@ export const api = {
         subscriptionStartDate?: string;
         subscriptionEndDate?: string;
         subscriptionStatus?: 'ACTIVE' | 'EXPIRED' | 'SUSPENDED';
-        appKey?: string;
-        regenerateKey?: boolean;
         renewFromNow?: boolean;
       }
     ) =>
       apiFetch(`/superadmin/tenants/${tenantId}/subscription`, {
         method: 'PATCH',
         body: data,
-      }),
-    regenerateTenantKey: (tenantId: number) =>
-      apiFetch<{
-        success: boolean;
-        appKey: string;
-        message: string;
-        tenant: any;
-      }>(`/superadmin/tenants/${tenantId}/regenerate-key`, {
-        method: 'POST',
       }),
     deleteTenant: (tenantId: number) =>
       apiFetch(`/superadmin/tenants/${tenantId}/delete`, {
@@ -386,6 +382,23 @@ export const api = {
         totalRows: number;
         sql: string;
       }>('/superadmin/export-sql'),
+    importPlatformSql: (sqlContent: string) =>
+      apiFetch<{
+        success: boolean;
+        message: string;
+        counts?: {
+          stores: number;
+          products: number;
+          purchases: number;
+          sales: number;
+          customers: number;
+          returns: number;
+        };
+        timestamp?: string;
+      }>('/superadmin/import-sql', {
+        method: 'POST',
+        body: { sql: sqlContent, sqlContent },
+      }),
     createTenant: (data: {
       storeName: string;
       ownerName: string;
@@ -395,7 +408,6 @@ export const api = {
       themeColor?: string;
       currency?: string;
       subscriptionPlan?: '6_MONTHS' | 'YEARLY' | string;
-      appKey?: string;
       subscriptionStartDate?: string;
       subscriptionEndDate?: string;
     }) => apiFetch('/superadmin/tenants', { method: 'POST', body: data }),
@@ -460,15 +472,59 @@ export const api = {
       return apiFetch<any>(`/auth/store-credentials${query}`);
     },
     signup: (data: any) => apiFetch('/auth/signup', { method: 'POST', body: data }),
-    forgotPassword: (data: { email: string; tenantId?: number | null }) => {
+    forgotPassword: (data: { email: string; tenantId?: number | null; origin?: string }) => {
       const rawTid = Number(data?.tenantId ?? getActiveTenantId() ?? 0);
       const cleanTenantId = Number.isInteger(rawTid) && rawTid > 0 ? rawTid : undefined;
-      return apiFetch('/auth/forgot-password', {
+      return apiFetch<{
+        success?: boolean;
+        emailSent?: boolean;
+        email?: string;
+        resetLink?: string;
+        resetToken?: string;
+        expiresAt?: string;
+        message: string;
+      }>('/auth/send-reset-link', {
         method: 'POST',
-        body: { ...data, tenantId: cleanTenantId },
+        body: {
+          ...data,
+          tenantId: cleanTenantId,
+          origin: data.origin || (typeof window !== 'undefined' ? window.location.origin : ''),
+        },
         ...(cleanTenantId ? { headers: { 'X-Tenant-Id': String(cleanTenantId) } } : {}),
       });
     },
+    sendResetLink: (data: { email: string; tenantId?: number | null; origin?: string }) => {
+      const rawTid = Number(data?.tenantId ?? getActiveTenantId() ?? 0);
+      const cleanTenantId = Number.isInteger(rawTid) && rawTid > 0 ? rawTid : undefined;
+      return apiFetch<{
+        success: boolean;
+        emailSent: boolean;
+        emailProvider?: string;
+        emailPreviewUrl?: string | null;
+        email: string;
+        resetLink: string;
+        resetToken: string;
+        expiresAt: string;
+        message: string;
+      }>('/auth/send-reset-link', {
+        method: 'POST',
+        body: {
+          ...data,
+          tenantId: cleanTenantId,
+          origin: data.origin || (typeof window !== 'undefined' ? window.location.origin : ''),
+        },
+        ...(cleanTenantId ? { headers: { 'X-Tenant-Id': String(cleanTenantId) } } : {}),
+      });
+    },
+    verifyResetToken: (token: string) =>
+      apiFetch<{
+        valid: boolean;
+        email?: string;
+        name?: string;
+        role?: string;
+        tenantId?: number;
+        expiresAt?: string;
+      }>(`/auth/verify-reset-token?token=${encodeURIComponent(token)}`),
     resetPassword: (data: {
       email: string;
       token: string;
@@ -499,7 +555,7 @@ export const api = {
   },
   products: {
     list: async (params?: { search?: string; category?: string; brand?: string; lowStock?: boolean; lowStockOnly?: boolean; limit?: number }) => {
-      const activeSlug = getActiveTenantSlug();
+      const activeTenantId = getActiveTenantId();
       const qs = new URLSearchParams();
       if (params?.search) qs.set('search', params.search);
       if (params?.category) qs.set('category', params.category);
@@ -511,7 +567,7 @@ export const api = {
       const fallbackFromOfflineCache = async () => {
         let cached = await searchCachedProductsOffline(
           params?.search || '',
-          activeSlug,
+          activeTenantId,
           params?.limit || 500
         );
         if (params?.brand) {
@@ -541,7 +597,7 @@ export const api = {
       try {
         const res = await apiFetch<any>(`/products${query}`);
         if (res && Array.isArray(res.products) && res.products.length > 0) {
-          cacheCatalogOffline(res.products, activeSlug).catch(() => {});
+          cacheCatalogOffline(res.products, activeTenantId).catch(() => {});
         }
         return res;
       } catch (err: any) {
@@ -558,55 +614,55 @@ export const api = {
       }
     },
     scanBarcode: async (code: string) => {
-      const activeSlug = getActiveTenantSlug();
+      const activeTenantId = getActiveTenantId();
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        const cached = await lookupCachedProductOffline(code, activeSlug);
+        const cached = await lookupCachedProductOffline(code, activeTenantId);
         if (cached) return { product: cached, offline: true };
       }
       try {
         const res = await apiFetch<any>(`/products/barcode/${encodeURIComponent(code)}`);
         if (res && res.product) {
-          cacheCatalogOffline([res.product], activeSlug).catch(() => {});
+          cacheCatalogOffline([res.product], activeTenantId).catch(() => {});
         }
         return res;
       } catch (err: any) {
-        const cached = await lookupCachedProductOffline(code, activeSlug).catch(() => null);
+        const cached = await lookupCachedProductOffline(code, activeTenantId).catch(() => null);
         if (cached) return { product: cached, offline: true };
         throw err;
       }
     },
     lookupBarcode: async (code: string) => {
-      const activeSlug = getActiveTenantSlug();
+      const activeTenantId = getActiveTenantId();
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        const cached = await lookupCachedProductOffline(code, activeSlug);
+        const cached = await lookupCachedProductOffline(code, activeTenantId);
         if (cached) return { product: cached, offline: true };
       }
       try {
         const res = await apiFetch<any>(`/products/barcode/${encodeURIComponent(code)}`);
         if (res && res.product) {
-          cacheCatalogOffline([res.product], activeSlug).catch(() => {});
+          cacheCatalogOffline([res.product], activeTenantId).catch(() => {});
         }
         return res;
       } catch (err: any) {
-        const cached = await lookupCachedProductOffline(code, activeSlug).catch(() => null);
+        const cached = await lookupCachedProductOffline(code, activeTenantId).catch(() => null);
         if (cached) return { product: cached, offline: true };
         throw err;
       }
     },
     getByBarcode: async (code: string) => {
-      const activeSlug = getActiveTenantSlug();
+      const activeTenantId = getActiveTenantId();
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        const cached = await lookupCachedProductOffline(code, activeSlug);
+        const cached = await lookupCachedProductOffline(code, activeTenantId);
         if (cached) return { product: cached, offline: true };
       }
       try {
         const res = await apiFetch<any>(`/products/barcode/${encodeURIComponent(code)}`);
         if (res && res.product) {
-          cacheCatalogOffline([res.product], activeSlug).catch(() => {});
+          cacheCatalogOffline([res.product], activeTenantId).catch(() => {});
         }
         return res;
       } catch (err: any) {
-        const cached = await lookupCachedProductOffline(code, activeSlug).catch(() => null);
+        const cached = await lookupCachedProductOffline(code, activeTenantId).catch(() => null);
         if (cached) return { product: cached, offline: true };
         throw err;
       }
@@ -632,29 +688,110 @@ export const api = {
       const qs = params.toString() ? `?${params.toString()}` : '';
       return apiFetch(`/products/generate-barcode${qs}`);
     },
-    validateBarcode: (barcode: string, excludeId?: number) => {
-      const qs = new URLSearchParams({ barcode: String(barcode || '') });
-      if (excludeId !== undefined && excludeId !== null) {
-        qs.set('excludeId', String(excludeId));
+    suggestSku: (params: {
+      brand?: string;
+      category?: string;
+      article?: string;
+      productId?: number | string;
+      excludeId?: number;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params.brand) qs.set('brand', params.brand);
+      if (params.category) qs.set('category', params.category);
+      if (params.article) qs.set('article', params.article);
+      if (params.productId !== undefined && params.productId !== null) {
+        qs.set('productId', String(params.productId));
       }
-      return apiFetch(`/products/validate-barcode?${qs.toString()}`);
+      if (params.excludeId !== undefined && params.excludeId !== null) {
+        qs.set('excludeId', String(params.excludeId));
+      }
+      return apiFetch(`/products/suggest-sku?${qs.toString()}`);
     },
-    validateArticle: (article: string, sku?: string, excludeId?: number) => {
-      const qs = new URLSearchParams({ article: String(article || '') });
-      if (sku) {
-        qs.set('sku', String(sku));
+    validateBarcode: async (barcode: string, excludeId?: number) => {
+      const cleanBarcode = String(barcode || '').trim();
+      const qs = new URLSearchParams({ barcode: cleanBarcode });
+      if (excludeId !== undefined && excludeId !== null) {
+        qs.set('excludeId', String(excludeId));
+      }
+      try {
+        return await apiFetch(`/products/validate-barcode?${qs.toString()}`);
+      } catch (err) {
+        const activeTenantId = getActiveTenantId();
+        const cached = await searchCachedProductsOffline('', activeTenantId, 2000).catch(() => []);
+        const dup = cached.find(
+          (p: any) =>
+            String(p.barcode || '').trim().toLowerCase() === cleanBarcode.toLowerCase() &&
+            (!excludeId || Number(p.id) !== Number(excludeId))
+        );
+        if (dup) {
+          return {
+            valid: false,
+            isDuplicate: true,
+            existingProduct: dup,
+            error: `Barcode is already in use in this store by product: "${dup.name || dup.article}" (${dup.sku})`,
+          };
+        }
+        throw err;
+      }
+    },
+    validateArticle: async (article: string, sku?: string, excludeId?: number) => {
+      const cleanArt = String(article || '').trim().toUpperCase();
+      const cleanSku = String(sku || '').trim().toUpperCase();
+      const qs = new URLSearchParams({ article: cleanArt });
+      if (sku !== undefined) {
+        qs.set('sku', cleanSku);
       }
       if (excludeId !== undefined && excludeId !== null) {
         qs.set('excludeId', String(excludeId));
       }
-      return apiFetch(`/products/validate-article?${qs.toString()}`);
+      try {
+        return await apiFetch(`/products/validate-article?${qs.toString()}`);
+      } catch (err) {
+        const activeTenantId = getActiveTenantId();
+        const cached = await searchCachedProductsOffline('', activeTenantId, 2000).catch(() => []);
+        const artDup = cached.find(
+          (p: any) =>
+            String(p.article || '').trim().toUpperCase() === cleanArt &&
+            (!excludeId || Number(p.id) !== Number(excludeId))
+        );
+        if (artDup) {
+          const msg = `Article "${cleanArt}" already exists in this store (used by SKU: ${artDup.sku}).`;
+          return {
+            valid: false,
+            isDuplicate: true,
+            duplicateField: 'article',
+            articleError: msg,
+            existingProduct: artDup,
+            error: msg,
+          };
+        }
+        if (cleanSku) {
+          const skuDup = cached.find(
+            (p: any) =>
+              String(p.sku || '').trim().toUpperCase() === cleanSku &&
+              (!excludeId || Number(p.id) !== Number(excludeId))
+          );
+          if (skuDup) {
+            const msg = `SKU "${cleanSku}" already exists in this store (used by Article: ${skuDup.article || skuDup.name}).`;
+            return {
+              valid: false,
+              isDuplicate: true,
+              duplicateField: 'sku',
+              skuError: msg,
+              existingProduct: skuDup,
+              error: msg,
+            };
+          }
+        }
+        throw err;
+      }
     },
     getById: (id: number) => apiFetch(`/products/${id}`),
     get: (id: number) => apiFetch(`/products/${id}`),
     create: async (data: any) => {
       const res = await apiFetch<any>('/products', { method: 'POST', body: data });
       if (res && res.product) {
-        cacheCatalogOffline([res.product], getActiveTenantSlug()).catch(() => {});
+        cacheCatalogOffline([res.product], getActiveTenantId()).catch(() => {});
       }
       return res;
     },
@@ -664,7 +801,7 @@ export const api = {
         body: Array.isArray(payload) ? { products: payload } : payload,
       });
       if (res && Array.isArray(res.products) && res.products.length > 0) {
-        cacheCatalogOffline(res.products, getActiveTenantSlug()).catch(() => {});
+        cacheCatalogOffline(res.products, getActiveTenantId()).catch(() => {});
       }
       return res;
     },
@@ -697,11 +834,15 @@ export const api = {
     update: async (id: number, data: any) => {
       const res = await apiFetch<any>(`/products/${id}`, { method: 'PUT', body: data });
       if (res && res.product) {
-        cacheCatalogOffline([res.product], getActiveTenantSlug()).catch(() => {});
+        cacheCatalogOffline([res.product], getActiveTenantId()).catch(() => {});
       }
       return res;
     },
-    delete: (id: number) => apiFetch(`/products/${id}`, { method: 'DELETE' }),
+    delete: async (id: number) => {
+      const res = await apiFetch<any>(`/products/${id}`, { method: 'DELETE' });
+      deleteCachedProductOffline(id, getActiveTenantId()).catch(() => {});
+      return res;
+    },
   },
   brandCategory: {
     getBrands: () => apiFetch('/brands'),

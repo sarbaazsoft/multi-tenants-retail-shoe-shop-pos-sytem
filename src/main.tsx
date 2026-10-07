@@ -21,6 +21,8 @@ if ('serviceWorker' in navigator) {
         }
       })
       .catch(() => {});
+    // Register lightweight background-sync-only service worker (no fetch interception)
+    navigator.serviceWorker.register('/sw-background-sync.js').catch(() => {});
   } else {
     registerSW({
       immediate: true,

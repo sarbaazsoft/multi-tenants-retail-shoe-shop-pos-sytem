@@ -4,14 +4,19 @@ import bcrypt from 'bcryptjs';
 import { pgClient } from '../../db/index.ts';
 import {
   ensureSaasControlPlane,
+  ensureDatabaseSchema,
   ensureTenantStoreUsers,
-  generateUniqueAppKey,
   normalizeSubscriptionPlan,
   calculateSubscriptionEndDate,
   syncExpiredTenantSubscriptions,
 } from '../../db/schemaInit.ts';
 import { requireAuth, requireAdmin, requireSuperAdmin, generateToken, type AuthenticatedRequest } from '../auth.ts';
-import { resolveTenantContext } from '../middleware/tenantMiddleware.ts';
+import {
+  resolveTenantContext,
+  isTenantOnlineInMiddleware,
+  getTenantMiddlewareLastSeen,
+  removeTenantMiddlewarePresence,
+} from '../middleware/tenantMiddleware.ts';
 
 const router = Router();
 
@@ -178,7 +183,6 @@ router.get('/saas/resolve', async (req: Request, res: Response) => {
       slug: string;
       name: string;
       status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
-      app_key: string;
       subscription_plan: string;
       subscription_start_date: string;
       subscription_end_date: string;
@@ -189,7 +193,7 @@ router.get('/saas/resolve', async (req: Request, res: Response) => {
       currency: string;
       onboarding_completed: boolean;
     }>(
-      `SELECT t.id, t.slug, t.name, t.status, t.app_key, t.subscription_plan,
+      `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
               t.subscription_start_date, t.subscription_end_date, t.subscription_status,
               t.theme_color, t.background_color, t.onboarding_completed,
               COALESCE(NULLIF(cs.logo, ''), '/pwa-512x512.png') AS logo_url,
@@ -206,7 +210,6 @@ router.get('/saas/resolve', async (req: Request, res: Response) => {
         slug: t.slug,
         name: t.name,
         status: t.status,
-        appKey: t.app_key || '',
         subscriptionPlan: t.subscription_plan || 'YEARLY',
         subscriptionStartDate: t.subscription_start_date ? new Date(t.subscription_start_date).toISOString() : '',
         subscriptionEndDate: t.subscription_end_date ? new Date(t.subscription_end_date).toISOString() : '',
@@ -323,7 +326,6 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
       slug: string;
       name: string;
       status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
-      app_key: string;
       subscription_plan: string;
       subscription_start_date: string;
       subscription_end_date: string;
@@ -576,16 +578,23 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
         subStatus = 'EXPIRED';
       }
 
+      const isOnline =
+        s.status === 'ACTIVE' &&
+        subStatus === 'ACTIVE' &&
+        isTenantOnlineInMiddleware(s.id, s.status, subStatus);
+      const lastSeenAt = getTenantMiddlewareLastSeen(s.id);
+
       return {
         id: s.id,
         slug: s.slug,
         name: s.name,
         status: s.status,
-        appKey: s.app_key || '',
         subscriptionPlan: normalizeSubscriptionPlan(s.subscription_plan),
         subscriptionStartDate: startDateIso,
         subscriptionEndDate: endDateIso,
         subscriptionStatus: subStatus,
+        isOnline,
+        lastSeenAt,
         themeColor: s.theme_color || '#7C3AED',
         backgroundColor: s.background_color || '#0F172A',
         logoUrl: s.logo_url || '/pwa-512x512.png',
@@ -757,6 +766,9 @@ router.patch('/superadmin/tenants/:id/status', requireAuth, requireSuperAdmin, a
     );
 
     const updated = updateRes.rows[0];
+    if (updated.status !== 'ACTIVE' || updated.subscription_status !== 'ACTIVE') {
+      removeTenantMiddlewarePresence(tenantId);
+    }
     return res.json({
       success: true,
       tenant: updated,
@@ -773,7 +785,7 @@ router.patch('/superadmin/tenants/:id/status', requireAuth, requireSuperAdmin, a
 });
 
 /**
- * 5A-2. SUPERADMIN MANAGE STORE SUBSCRIPTION, APP KEY & EXPIRY (`PATCH /api/superadmin/tenants/:id/subscription` & `POST /api/superadmin/tenants/:id/regenerate-key`)
+ * 5A-2. SUPERADMIN MANAGE STORE SUBSCRIPTION & EXPIRY (`PATCH /api/superadmin/tenants/:id/subscription`)
  */
 async function handleUpdateTenantSubscription(req: AuthenticatedRequest, res: Response) {
   try {
@@ -787,8 +799,6 @@ async function handleUpdateTenantSubscription(req: AuthenticatedRequest, res: Re
       subscriptionStartDate,
       subscriptionEndDate,
       subscriptionStatus,
-      appKey,
-      regenerateKey,
       renewFromNow,
     } = req.body || {};
 
@@ -837,21 +847,6 @@ async function handleUpdateTenantSubscription(req: AuthenticatedRequest, res: Re
     const finalPlan = subscriptionPlan
       ? normalizeSubscriptionPlan(subscriptionPlan)
       : normalizeSubscriptionPlan(curr.subscription_plan);
-
-    let finalAppKey = curr.app_key || (await generateUniqueAppKey());
-    if (regenerateKey) {
-      finalAppKey = await generateUniqueAppKey();
-    } else if (appKey && String(appKey).trim() && String(appKey).trim() !== curr.app_key) {
-      const candidateKey = String(appKey).trim().toUpperCase();
-      const dupCheck = await pgClient.query(
-        'SELECT id FROM tenants WHERE app_key = $1 AND id != $2 LIMIT 1',
-        [candidateKey, tenantId]
-      );
-      if (dupCheck.rows.length > 0) {
-        return res.status(409).json({ error: `App Key '${candidateKey}' is already assigned to another store.` });
-      }
-      finalAppKey = candidateKey;
-    }
 
     let finalStartDate = subscriptionStartDate
       ? new Date(subscriptionStartDate)
@@ -904,18 +899,16 @@ async function handleUpdateTenantSubscription(req: AuthenticatedRequest, res: Re
     const updatedRes = await pgClient.query(
       `UPDATE tenants
        SET name = $1,
-           app_key = $2,
-           subscription_plan = $3,
-           subscription_start_date = $4,
-           subscription_end_date = $5,
-           subscription_status = $6,
-           status = $7,
+           subscription_plan = $2,
+           subscription_start_date = $3,
+           subscription_end_date = $4,
+           subscription_status = $5,
+           status = $6,
            updated_at = NOW()
-       WHERE id = $8
+       WHERE id = $7
        RETURNING *`,
       [
         finalStoreName,
-        finalAppKey,
         finalPlan,
         finalStartDate.toISOString(),
         finalEndDate.toISOString(),
@@ -945,7 +938,6 @@ async function handleUpdateTenantSubscription(req: AuthenticatedRequest, res: Re
         slug: row.slug,
         name: row.name,
         status: row.status,
-        appKey: row.app_key,
         subscriptionPlan: row.subscription_plan,
         subscriptionStartDate: new Date(row.subscription_start_date).toISOString(),
         subscriptionEndDate: new Date(row.subscription_end_date).toISOString(),
@@ -953,7 +945,7 @@ async function handleUpdateTenantSubscription(req: AuthenticatedRequest, res: Re
         ownerEmail: finalOwnerEmail,
         ownerPhone: finalOwnerPhone,
       },
-      message: `Subscription & App Key updated for '${row.name}'.`,
+      message: `Subscription updated for '${row.name}'.`,
     });
   } catch (err: any) {
     if (err?.code === '23505' && String(err?.constraint || '').includes('users_email')) {
@@ -969,30 +961,56 @@ async function handleUpdateTenantSubscription(req: AuthenticatedRequest, res: Re
 router.patch('/superadmin/tenants/:id/subscription', requireAuth, requireSuperAdmin, handleUpdateTenantSubscription);
 router.put('/superadmin/tenants/:id', requireAuth, requireSuperAdmin, handleUpdateTenantSubscription);
 
-router.post('/superadmin/tenants/:id/regenerate-key', requireAuth, requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
+/**
+ * Finds the lowest available store ID (1, 2, 3, ...) in the tenants table
+ * so deleted store IDs are recycled automatically without requiring any extra column.
+ */
+export async function getNextTenantId(): Promise<number> {
   try {
-    await ensureSaasControlPlane();
-    const tenantId = parseInt(req.params.id, 10);
-    const newKey = await generateUniqueAppKey();
-    const updateRes = await pgClient.query<{ id: number; slug: string; name: string; app_key: string }>(
-      `UPDATE tenants
-       SET app_key = $1, updated_at = NOW()
-       WHERE id = $2
-       RETURNING id, slug, name, app_key`,
-      [newKey, tenantId]
+    const statsRes = await pgClient.query<{ cnt: number; max_id: number }>(
+      `SELECT COUNT(*)::int AS cnt,
+              COALESCE(MAX(id), 0)::int AS max_id
+       FROM tenants`
     );
-    if (updateRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Store tenant not found.' });
-    }
-    const row = updateRes.rows[0];
-    return res.json({
-      success: true,
-      appKey: row.app_key,
-      tenant: row,
-      message: `Generated new App Key (${row.app_key}) for '${row.name}'.`,
-    });
+    const cnt = Number(statsRes.rows[0]?.cnt || 0);
+    const maxId = Number(statsRes.rows[0]?.max_id || 0);
+
+    // Fast path: empty table -> 1, or contiguous 1..N -> cnt + 1
+    if (cnt === 0) return 1;
+    if (cnt === maxId) return cnt + 1;
+
+    // Gap exists (a store was deleted): find the first missing positive integer ID (1..maxId)
+    const gapRes = await pgClient.query<{ next_id: number }>(
+      `SELECT COALESCE(
+        CASE WHEN NOT EXISTS (
+          SELECT 1 FROM tenants WHERE id = 1
+        ) THEN 1 END,
+        (SELECT t1.id + 1
+         FROM tenants t1
+         LEFT JOIN tenants t2 ON t2.id = t1.id + 1
+         WHERE t1.id >= 1
+           AND t2.id IS NULL
+         ORDER BY t1.id ASC
+         LIMIT 1),
+        $1::int
+      ) AS next_id`,
+      [Math.max(cnt, maxId) + 1]
+    );
+    return Number(gapRes.rows[0]?.next_id || cnt + 1);
+  } catch (_) {
+    const fallbackRes = await pgClient.query<{ next_id: string }>(
+      'SELECT (COALESCE(MAX(id), 0) + 1)::text AS next_id FROM tenants'
+    );
+    return parseInt(fallbackRes.rows[0]?.next_id || '1', 10);
+  }
+}
+
+router.get('/superadmin/tenants/next-id', requireAuth, requireSuperAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const nextTenantId = await getNextTenantId();
+    return res.json({ nextTenantId });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to regenerate App Key: ' + err.message });
+    return res.status(500).json({ error: 'Failed to retrieve next store ID: ' + err.message });
   }
 });
 
@@ -1009,16 +1027,14 @@ async function provisionNewTenantStore(params: {
   themeColor?: string;
   currency?: string;
   subscriptionPlan?: '6_MONTHS' | 'YEARLY' | string;
-  appKey?: string;
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
 }) {
   const cleanSlug = params.slug ? normalizeStoreSlug(params.slug) : await generateUniqueStoreSlug(params.storeName);
   const normalizedOwnerEmail = params.ownerEmail.trim().toLowerCase();
 
-  // Serialize provisioning attempts for the same email within the transaction.
-  // This prevents parallel requests from both passing the duplicate check
-  // without requiring a destructive email-uniqueness migration.
+  // Serialize tenant provisioning to prevent concurrent requests from colliding on recycled tenant ID or email
+  await pgClient.query('SELECT pg_advisory_xact_lock(904821)');
   await pgClient.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [normalizedOwnerEmail]);
 
   const duplicateOwnerEmail = await pgClient.query(
@@ -1041,11 +1057,6 @@ async function provisionNewTenantStore(params: {
   const themeColor = params.themeColor || '#7C3AED';
   const currency = params.currency || 'PKR';
   const subscriptionPlan = normalizeSubscriptionPlan(params.subscriptionPlan || 'YEARLY');
-  let appKey = params.appKey && params.appKey.trim() ? params.appKey.trim().toUpperCase() : await generateUniqueAppKey();
-  const existingKey = await pgClient.query('SELECT id FROM tenants WHERE app_key = $1 LIMIT 1', [appKey]);
-  if (existingKey.rows.length > 0) {
-    appKey = await generateUniqueAppKey();
-  }
 
   const startDate = params.subscriptionStartDate ? new Date(params.subscriptionStartDate) : new Date();
   const validStartDate = isNaN(startDate.getTime()) ? new Date() : startDate;
@@ -1057,25 +1068,31 @@ async function provisionNewTenantStore(params: {
   }
   const subscriptionStatus = endDate.getTime() < Date.now() ? 'EXPIRED' : 'ACTIVE';
 
+  // Recycle lowest available store ID (or MAX(id) + 1 if no gaps exist)
+  const nextTenantId = await getNextTenantId();
+
+  // Clean up any stale non-SuperAdmin rows that might reference a recycled tenant_id
+  await pgClient.query('DELETE FROM company_settings WHERE tenant_id = $1', [nextTenantId]).catch(() => {});
+  await pgClient.query("DELETE FROM users WHERE tenant_id = $1 AND role != 'SUPERADMIN'", [nextTenantId]).catch(() => {});
+
   const tenantInsert = await pgClient.query<{
     id: number;
     slug: string;
     name: string;
-    app_key: string;
     subscription_plan: string;
     subscription_start_date: string;
     subscription_end_date: string;
     subscription_status: string;
   }>(
     `INSERT INTO tenants (
-      slug, name, status, app_key, subscription_plan, subscription_start_date, subscription_end_date, subscription_status,
-      theme_color, background_color, onboarding_completed
-    ) VALUES ($1, $2, 'ACTIVE', $3, $4, $5, $6, $7, $8, '#0F172A', false)
-    RETURNING id, slug, name, app_key, subscription_plan, subscription_start_date, subscription_end_date, subscription_status`,
+      id, slug, name, status, subscription_plan, subscription_start_date, subscription_end_date, subscription_status,
+      theme_color, background_color, onboarding_completed, deleted_product_ids
+    ) VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6, $7, $8, '#0F172A', false, '{}')
+    RETURNING id, slug, name, subscription_plan, subscription_start_date, subscription_end_date, subscription_status`,
     [
+      nextTenantId,
       cleanSlug,
       params.storeName.trim(),
-      appKey,
       subscriptionPlan,
       validStartDate.toISOString(),
       endDate.toISOString(),
@@ -1083,6 +1100,17 @@ async function provisionNewTenantStore(params: {
       themeColor,
     ]
   );
+
+  // Keep tenants_id_seq synchronized with the highest current id
+  await pgClient
+    .query(
+      `SELECT setval(
+         pg_get_serial_sequence('tenants', 'id'),
+         COALESCE((SELECT MAX(id) FROM tenants), 1),
+         (SELECT EXISTS (SELECT 1 FROM tenants))
+       )`
+    )
+    .catch(() => {});
 
   const newTenant = tenantInsert.rows[0];
 
@@ -1116,7 +1144,6 @@ async function provisionNewTenantStore(params: {
     tenantId: newTenant.id,
     slug: newTenant.slug,
     storeName: newTenant.name,
-    appKey: newTenant.app_key,
     subscriptionPlan: newTenant.subscription_plan,
     subscriptionStartDate: new Date(newTenant.subscription_start_date).toISOString(),
     subscriptionEndDate: new Date(newTenant.subscription_end_date).toISOString(),
@@ -1304,6 +1331,105 @@ router.get('/superadmin/export-sql', requireAuth, requireSuperAdmin, async (_req
 });
 
 /**
+ * 5C-2. SUPERADMIN IMPORT PLATFORM / MULTI-STORE SQL FILE (`POST /api/superadmin/import-sql`)
+ */
+router.post('/superadmin/import-sql', requireAuth, requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const sql = String(req.body?.sql || req.body?.sqlContent || '').trim();
+    if (!sql) {
+      return res.status(400).json({ error: 'SQL script content is required.' });
+    }
+
+    await pgClient.waitReady;
+    await ensureDatabaseSchema();
+    await pgClient.exec(sql);
+    await ensureDatabaseSchema();
+
+    const superAdminHash = await bcrypt.hash('superadmin123', 10);
+    const storeUserHash = await bcrypt.hash('admin123', 10);
+    await pgClient
+      .query(
+        `UPDATE users
+         SET password_hash = $1, quick_password = 'superadmin123', status = 'APPROVED', active = true
+         WHERE UPPER(COALESCE(role, '')) = 'SUPERADMIN'`,
+        [superAdminHash]
+      )
+      .catch(() => {});
+    await pgClient
+      .query(
+        `UPDATE users
+         SET password_hash = $1, quick_password = 'admin123', status = 'APPROVED', active = true
+         WHERE UPPER(COALESCE(role, '')) != 'SUPERADMIN'`,
+        [storeUserHash]
+      )
+      .catch(() => {});
+    await pgClient
+      .query(`UPDATE store_requests SET initial_password = 'admin123'`)
+      .catch(() => {});
+
+    const seqTables = [
+      'tenants',
+      'store_requests',
+      'company_settings',
+      'users',
+      'brands',
+      'categories',
+      'products',
+      'suppliers',
+      'customers',
+      'purchases',
+      'purchase_items',
+      'supplier_payments',
+      'purchase_returns',
+      'purchase_return_items',
+      'sales',
+      'sale_items',
+      'returns',
+      'return_items',
+      'stock_movements',
+    ];
+    for (const tbl of seqTables) {
+      await pgClient
+        .query(
+          `SELECT setval(
+             pg_get_serial_sequence('${tbl}', 'id'),
+             COALESCE((SELECT MAX(id) FROM ${tbl}), 1),
+             (SELECT EXISTS (SELECT 1 FROM ${tbl}))
+           )`
+        )
+        .catch(() => {});
+    }
+
+    const [storesRes, prodRes, purRes, salesRes, custRes, retRes] = await Promise.all([
+      pgClient.query('SELECT COUNT(*)::int as c FROM tenants').catch(() => ({ rows: [{ c: 0 }] })),
+      pgClient.query('SELECT COUNT(*)::int as c FROM products').catch(() => ({ rows: [{ c: 0 }] })),
+      pgClient.query('SELECT COUNT(*)::int as c FROM purchases').catch(() => ({ rows: [{ c: 0 }] })),
+      pgClient.query('SELECT COUNT(*)::int as c FROM sales').catch(() => ({ rows: [{ c: 0 }] })),
+      pgClient.query('SELECT COUNT(*)::int as c FROM customers').catch(() => ({ rows: [{ c: 0 }] })),
+      pgClient.query('SELECT COUNT(*)::int as c FROM returns').catch(() => ({ rows: [{ c: 0 }] })),
+    ]);
+
+    const counts = {
+      stores: Number(storesRes.rows[0]?.c || 0),
+      products: Number(prodRes.rows[0]?.c || 0),
+      purchases: Number(purRes.rows[0]?.c || 0),
+      sales: Number(salesRes.rows[0]?.c || 0),
+      customers: Number(custRes.rows[0]?.c || 0),
+      returns: Number(retRes.rows[0]?.c || 0),
+    };
+
+    return res.json({
+      success: true,
+      message: `SQL script executed! Imported ${counts.stores} stores, ${counts.products.toLocaleString()} SKUs, ${counts.purchases} purchases, and ${counts.sales} sales.`,
+      counts,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to execute platform SQL import: ' + err.message });
+  }
+});
+
+/**
  * 5D. SUPERADMIN DELETE STORE TENANT & ALL ISOLATED DATA (`DELETE /api/superadmin/tenants/:id` & `POST /api/superadmin/tenants/:id/delete`)
  */
 async function handleDeleteTenantStore(req: AuthenticatedRequest, res: Response) {
@@ -1429,10 +1555,23 @@ async function handleDeleteTenantStore(req: AuthenticatedRequest, res: Response)
 
     // Finally delete the tenant record itself
     await pgClient.query('DELETE FROM tenants WHERE id = $1', [tenantId]);
+    removeTenantMiddlewarePresence(tenantId);
+
+    // Keep tenants_id_seq synchronized after deletion so store IDs are cleanly recycled
+    await pgClient
+      .query(
+        `SELECT setval(
+           pg_get_serial_sequence('tenants', 'id'),
+           COALESCE((SELECT MAX(id) FROM tenants), 1),
+           (SELECT EXISTS (SELECT 1 FROM tenants))
+         )`
+      )
+      .catch(() => {});
 
     return res.json({
       success: true,
       deletedStore: store,
+      recycledTenantId: tenantId,
       message: `Store '${store.name}' and all its isolated records have been permanently deleted.`,
     });
   } catch (err: any) {
@@ -1488,9 +1627,6 @@ router.post('/superadmin/store-requests/:id/approve', requireAuth, requireSuperA
       const finalPlan = normalizeSubscriptionPlan(
         req.body?.subscriptionPlan || storeReq.plan || existingTenant.subscription_plan || 'YEARLY'
       );
-      const finalAppKey = existingTenant.app_key && String(existingTenant.app_key).trim()
-        ? String(existingTenant.app_key).trim()
-        : await generateUniqueAppKey();
 
       // Extend from existing expiry if still in the future, otherwise from now
       const currEnd = existingTenant.subscription_end_date ? new Date(existingTenant.subscription_end_date) : new Date(0);
@@ -1500,16 +1636,15 @@ router.post('/superadmin/store-requests/:id/approve', requireAuth, requireSuperA
 
       const updatedTenantRes = await pgClient.query<any>(
         `UPDATE tenants
-         SET app_key = $1,
-             subscription_plan = $2,
-             subscription_start_date = $3,
-             subscription_end_date = $4,
+         SET subscription_plan = $1,
+             subscription_start_date = $2,
+             subscription_end_date = $3,
              subscription_status = 'ACTIVE',
              status = 'ACTIVE',
              updated_at = NOW()
-         WHERE id = $5
+         WHERE id = $4
          RETURNING *`,
-        [finalAppKey, finalPlan, newStartDate.toISOString(), newEndDate.toISOString(), existingTenant.id]
+        [finalPlan, newStartDate.toISOString(), newEndDate.toISOString(), existingTenant.id]
       );
 
       await pgClient.query(
@@ -1536,7 +1671,6 @@ router.post('/superadmin/store-requests/:id/approve', requireAuth, requireSuperA
           tenantId: updatedTenant.id,
           slug: updatedTenant.slug,
           storeName: updatedTenant.name,
-          appKey: updatedTenant.app_key,
           subscriptionPlan: updatedTenant.subscription_plan,
           subscriptionStartDate: new Date(updatedTenant.subscription_start_date).toISOString(),
           subscriptionEndDate: new Date(updatedTenant.subscription_end_date).toISOString(),
@@ -1700,7 +1834,6 @@ router.post('/superadmin/tenants', requireAuth, requireSuperAdmin, async (req: A
       themeColor,
       currency,
       subscriptionPlan,
-      appKey,
       subscriptionStartDate,
       subscriptionEndDate,
     } = req.body || {};
@@ -1738,7 +1871,6 @@ router.post('/superadmin/tenants', requireAuth, requireSuperAdmin, async (req: A
       themeColor,
       currency,
       subscriptionPlan: subscriptionPlan || 'YEARLY',
-      appKey,
       subscriptionStartDate,
       subscriptionEndDate,
     });

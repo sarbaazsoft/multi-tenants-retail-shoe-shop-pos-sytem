@@ -6,6 +6,11 @@ import { pgClient } from '../../db/index.ts';
 import { ensureSaasControlPlane, ensureTenantStoreUsers } from '../../db/schemaInit.ts';
 import { generateToken, requireAuth } from '../auth.ts';
 import type { AuthenticatedRequest, AuthUser } from '../auth.ts';
+import {
+  recordTenantMiddlewarePresence,
+  removeTenantMiddlewarePresence,
+} from '../middleware/tenantMiddleware.ts';
+import { sendPasswordResetEmail } from '../mailer.ts';
 
 const router = Router();
 
@@ -15,7 +20,6 @@ async function resolveTargetTenant(req: Request): Promise<{
   slug: string;
   name: string;
   status: string;
-  app_key?: string;
   subscription_plan?: string;
   subscription_start_date?: string;
   subscription_end_date?: string;
@@ -37,7 +41,7 @@ async function resolveTargetTenant(req: Request): Promise<{
 
   if (hasExplicitTenantId) {
     const byIdRes = await pgClient.query<any>(
-      `SELECT t.id, t.slug, t.name, t.status, t.app_key, t.subscription_plan,
+      `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
               t.subscription_start_date, t.subscription_end_date, t.subscription_status,
               u.name AS owner_name, u.email AS owner_email, u.phone AS owner_phone
        FROM tenants t
@@ -56,7 +60,7 @@ async function resolveTargetTenant(req: Request): Promise<{
   }
 
   const defRes = await pgClient.query<any>(
-    `SELECT t.id, t.slug, t.name, t.status, t.app_key, t.subscription_plan,
+    `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
             t.subscription_start_date, t.subscription_end_date, t.subscription_status,
             u.name AS owner_name, u.email AS owner_email, u.phone AS owner_phone
      FROM tenants t
@@ -96,7 +100,6 @@ const handleGetStoreCredentials = async (req: Request, res: Response) => {
         slug: tenant.slug,
         name: tenant.name,
         status: tenant.status,
-        appKey: tenant.app_key || '',
         subscriptionPlan: tenant.subscription_plan || 'YEARLY',
         subscriptionStartDate: tenant.subscription_start_date || '',
         subscriptionEndDate: tenant.subscription_end_date || '',
@@ -136,7 +139,7 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
     // Authenticate against the explicitly selected tenant when tenantId is supplied.
     if (hasExplicitTenantId) {
       const tenantRes = await pgClient.query<any>(
-              'SELECT id, slug, name, status, onboarding_completed, app_key, subscription_plan, subscription_start_date, subscription_end_date, subscription_status FROM tenants WHERE id = $1 LIMIT 1',
+              'SELECT id, slug, name, status, onboarding_completed, subscription_plan, subscription_start_date, subscription_end_date, subscription_status FROM tenants WHERE id = $1 LIMIT 1',
               [explicitTenantId]
             );
       if (tenantRes.rows.length === 0) {
@@ -355,10 +358,15 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
           String(t.status).toUpperCase() === 'SUSPENDED' ||
           String(t.subscription_status || '').toUpperCase() === 'SUSPENDED'
         ) {
+          removeTenantMiddlewarePresence(t.id);
           return res.status(423).json({
             error: `Store Suspended: "${t.name}" is currently suspended by platform administration.`,
             code: 'TENANT_SUSPENDED',
           });
+        }
+
+        if (subscriptionStatus === 'ACTIVE') {
+          recordTenantMiddlewarePresence(t.id, '/api/auth/login');
         }
       }
     }
@@ -602,38 +610,69 @@ router.put('/change-password', requireAuth, async (req: AuthenticatedRequest, re
   }
 });
 
-// Forgot Password (strictly scoped by tenant_id when invoked from a store)
-router.post('/forgot-password', async (req: Request, res: Response) => {
+// Send Password Reset Link to User's Email (POST /api/auth/send-reset-link & POST /api/auth/forgot-password)
+const handleSendPasswordResetLink = async (req: Request, res: Response) => {
   try {
-    const { email } = req.body;
-    if (!email) {
+    await ensureSaasControlPlane();
+    const { email, origin } = req.body || {};
+    if (!email || !String(email).trim()) {
       return res.status(400).json({ error: 'Email is required.' });
     }
 
-    const targetTenant = await resolveTargetTenant(req).catch(() => null);
-    const resolvedTenantId = Number(targetTenant?.id || req.body?.tenantId || req.query?.tenantId || 1);
+    const cleanEmail = String(email).trim();
+    const rawTid =
+      req.body?.tenantId ??
+      req.body?.tenant_id ??
+      req.query?.tenantId ??
+      req.query?.tenant_id ??
+      req.headers['x-tenant-id'];
+    const explicitTenantId = Number(rawTid);
+    const hasExplicitTenantId = Number.isInteger(explicitTenantId) && explicitTenantId > 0;
 
-    const userRes = await pgClient.query(
-      `SELECT id, name, email, tenant_id
-       FROM users
-       WHERE LOWER(email) = LOWER($1) AND COALESCE(tenant_id, 1) = $2
-       LIMIT 1`,
-      [email.trim(), resolvedTenantId]
-    );
-    if (userRes.rows.length === 0) {
-      return res.json({
-        message: 'If the email exists in our system, a password reset verification token has been issued.',
+    let user: any = null;
+
+    if (hasExplicitTenantId) {
+      const scopedRes = await pgClient.query(
+        `SELECT id, name, email, role, COALESCE(tenant_id, 1) AS tenant_id
+         FROM users
+         WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))
+           AND COALESCE(tenant_id, 1) = $2
+         ORDER BY CASE WHEN UPPER(role) = 'ADMIN' THEN 0 ELSE 1 END, id ASC
+         LIMIT 1`,
+        [cleanEmail, explicitTenantId]
+      );
+      user = scopedRes.rows[0] || null;
+    }
+
+    if (!user) {
+      const globalRes = await pgClient.query(
+        `SELECT id, name, email, role, COALESCE(tenant_id, 1) AS tenant_id
+         FROM users
+         WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))
+         ORDER BY CASE
+           WHEN UPPER(role) = 'SUPERADMIN' THEN 0
+           WHEN UPPER(role) = 'ADMIN' THEN 1
+           ELSE 2
+         END, id ASC
+         LIMIT 1`,
+        [cleanEmail]
+      );
+      user = globalRes.rows[0] || null;
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'No account found with that email address. Please check your email and try again.',
       });
     }
 
-    const user: any = userRes.rows[0];
     const resetToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-    const userTid = Number(user.tenant_id) > 0 ? Number(user.tenant_id) : resolvedTenantId;
+    const userTid = Number(user.tenant_id) > 0 ? Number(user.tenant_id) : 1;
 
     await pgClient.query(
-      'DELETE FROM password_reset_tokens WHERE user_id = $1 AND COALESCE(tenant_id, 1) = $2',
-      [user.id, userTid]
+      'DELETE FROM password_reset_tokens WHERE user_id = $1',
+      [user.id]
     );
 
     await pgClient.query(
@@ -641,63 +680,153 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
       [userTid, user.id, resetToken, expiresAt]
     );
 
-    res.json({
-      message: 'If the email exists in our system, a password reset verification token has been issued. Please enter your verification token to set a new password.',
+    const requestOrigin =
+      (typeof origin === 'string' && origin.trim().startsWith('http') ? origin.trim() : '') ||
+      (typeof req.headers.origin === 'string' && req.headers.origin.startsWith('http') ? req.headers.origin : '') ||
+      `${req.protocol}://${req.get('host')}`;
+
+    const isSuperAdmin = String(user.role || '').toUpperCase() === 'SUPERADMIN';
+    let storeName = isSuperAdmin ? 'POS SaaS C-Panel' : 'ShoePOS Terminal';
+    if (!isSuperAdmin && userTid > 0) {
+      const tRes = await pgClient
+        .query<{ name: string }>('SELECT name FROM tenants WHERE id = $1 LIMIT 1', [userTid])
+        .catch(() => ({ rows: [] }));
+      if (tRes.rows[0]?.name) {
+        storeName = tRes.rows[0].name;
+      }
+    }
+
+    const resetParams = new URLSearchParams();
+    resetParams.set('resetToken', resetToken);
+    resetParams.set('email', user.email);
+    if (!isSuperAdmin && userTid > 0) {
+      resetParams.set('tenantId', String(userTid));
+    }
+    const resetLink = `${requestOrigin.replace(/\/+$/, '')}/?${resetParams.toString()}`;
+
+    const mailResult = await sendPasswordResetEmail({
+      to: user.email,
+      userName: user.name,
+      storeName,
+      resetToken,
+      resetLink,
+      expiresAt,
+    });
+
+    console.log(
+      `📧 [Password Reset Email] To: ${user.email} | Provider: ${mailResult.provider} | Delivered: ${mailResult.delivered} | Link: ${resetLink}`
+    );
+
+    return res.json({
+      success: true,
+      emailSent: mailResult.delivered,
+      emailProvider: mailResult.provider,
+      emailPreviewUrl: mailResult.previewUrl || null,
+      email: user.email,
+      resetLink,
+      resetToken,
+      expiresAt: expiresAt.toISOString(),
+      message: `Password reset token and link have been sent by email to ${user.email}.`,
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Forgot password failed: ' + err.message });
+    return res.status(500).json({ error: 'Failed to send password reset link: ' + err.message });
+  }
+};
+
+router.post('/send-reset-link', handleSendPasswordResetLink);
+router.post('/forgot-password', handleSendPasswordResetLink);
+
+// Verify Reset Token from URL Link (GET /api/auth/verify-reset-token?token=...)
+router.get('/verify-reset-token', async (req: Request, res: Response) => {
+  try {
+    await ensureSaasControlPlane();
+    const token = String(req.query?.token || '').trim();
+    if (!token) {
+      return res.status(400).json({ valid: false, error: 'Reset token is required.' });
+    }
+
+    const tokenRes = await pgClient.query(
+      `SELECT prt.user_id, prt.tenant_id, prt.expires_at, u.email, u.name, u.role
+       FROM password_reset_tokens prt
+       JOIN users u ON u.id = prt.user_id
+       WHERE LOWER(BTRIM(prt.token)) = LOWER(BTRIM($1))
+       LIMIT 1`,
+      [token]
+    );
+
+    if (tokenRes.rows.length === 0) {
+      return res.status(404).json({ valid: false, error: 'Invalid or already used password reset link.' });
+    }
+
+    const row: any = tokenRes.rows[0];
+    if (new Date() > new Date(row.expires_at)) {
+      await pgClient.query('DELETE FROM password_reset_tokens WHERE LOWER(BTRIM(token)) = LOWER(BTRIM($1))', [token]);
+      return res.status(410).json({ valid: false, error: 'This password reset link has expired. Please request a new one.' });
+    }
+
+    return res.json({
+      valid: true,
+      email: row.email,
+      name: row.name,
+      role: row.role,
+      tenantId: Number(row.tenant_id) || 1,
+      expiresAt: row.expires_at,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ valid: false, error: 'Failed to verify reset token: ' + err.message });
   }
 });
 
-// Reset Password (strictly scoped by tenant_id)
+// Reset Password using Token from Reset Link
 router.post('/reset-password', async (req: Request, res: Response) => {
   try {
-    const { token, newPassword } = req.body;
+    await ensureSaasControlPlane();
+    const { token, newPassword } = req.body || {};
     if (!token || !newPassword) {
       return res.status(400).json({ error: 'Reset token and new password are required.' });
     }
 
-    if (newPassword.length < 6) {
+    if (String(newPassword).length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
     }
 
-    const targetTenant = await resolveTargetTenant(req).catch(() => null);
-    const resolvedTenantId = Number(targetTenant?.id || req.body?.tenantId || req.query?.tenantId || 1);
-
+    const cleanToken = String(token).trim();
     const tokenRes = await pgClient.query(
       `SELECT user_id, tenant_id, expires_at
        FROM password_reset_tokens
-       WHERE token = $1 AND COALESCE(tenant_id, 1) = $2
+       WHERE LOWER(BTRIM(token)) = LOWER(BTRIM($1))
        LIMIT 1`,
-      [token, resolvedTenantId]
+      [cleanToken]
     );
 
     if (tokenRes.rows.length === 0) {
-      return res.status(400).json({ error: 'Invalid or expired password reset token for this store.' });
+      return res.status(400).json({ error: 'Invalid or expired password reset token.' });
     }
 
-    const { user_id, tenant_id, expires_at } = tokenRes.rows[0] as any;
-    const effectiveTenantId = Number(tenant_id) > 0 ? Number(tenant_id) : resolvedTenantId;
+    const { user_id, expires_at } = tokenRes.rows[0] as any;
 
     if (new Date() > new Date(expires_at)) {
       await pgClient.query(
-        'DELETE FROM password_reset_tokens WHERE token = $1 AND COALESCE(tenant_id, 1) = $2',
-        [token, effectiveTenantId]
+        'DELETE FROM password_reset_tokens WHERE LOWER(BTRIM(token)) = LOWER(BTRIM($1))',
+        [cleanToken]
       );
       return res.status(400).json({ error: 'Password reset token has expired. Please request a new one.' });
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const passwordHash = await bcrypt.hash(String(newPassword), 10);
     await pgClient.query(
-      'UPDATE users SET password_hash = $1, quick_password = $2, updated_at = NOW() WHERE id = $3 AND COALESCE(tenant_id, 1) = $4',
-      [passwordHash, newPassword, user_id, effectiveTenantId]
+      'UPDATE users SET password_hash = $1, quick_password = $2, updated_at = NOW() WHERE id = $3',
+      [passwordHash, String(newPassword), user_id]
     );
     await pgClient.query(
-      'DELETE FROM password_reset_tokens WHERE token = $1 AND COALESCE(tenant_id, 1) = $2',
-      [token, effectiveTenantId]
+      'DELETE FROM password_reset_tokens WHERE user_id = $1',
+      [user_id]
     );
 
-    res.json({ message: 'Password has been reset successfully. You may now log in with your new password.' });
+    res.json({
+      success: true,
+      message: 'Password has been reset successfully. You may now log in with your new password.',
+    });
   } catch (err: any) {
     res.status(500).json({ error: 'Reset password failed: ' + err.message });
   }

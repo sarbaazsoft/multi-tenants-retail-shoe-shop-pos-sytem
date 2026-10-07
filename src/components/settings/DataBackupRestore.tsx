@@ -854,20 +854,33 @@ export const DataBackupRestore: React.FC<DataBackupRestoreProps> = ({
 
       {/* Manual SQL Script Import Card */}
       <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-[#070D1F] shadow-xs space-y-5">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold shrink-0">
-            <FileText className="w-5 h-5" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 flex items-center justify-center font-bold shrink-0">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Direct .SQL Script Import</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800/60">
+                  SQL File
+                </span>
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Upload and execute custom PostgreSQL scripts or use the bundled multi-store SQL import file.
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white flex items-center gap-2">
-              <span>Direct .SQL Script Import</span>
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800/60">
-                SQL File
-              </span>
-            </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Upload and execute custom PostgreSQL scripts to import records into your store database.
-            </p>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <a
+              href="/multi-store-pos-import.sql"
+              download="multi-store-pos-import.sql"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-cyan-400 border border-slate-200 dark:border-slate-700 text-xs font-bold transition shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Multi-Store .SQL</span>
+            </a>
           </div>
         </div>
 

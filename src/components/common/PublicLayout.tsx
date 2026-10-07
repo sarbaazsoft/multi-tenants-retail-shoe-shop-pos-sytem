@@ -11,7 +11,7 @@ export interface PublicLayoutProps extends PublicHeaderProps {
 /**
  * PublicLayout
  * Standard wrapper for public and onboarding routes (Loading, Auth, InstallWizard)
- * providing aligned showroom background opacity (80%), global header, and global footer.
+ * providing aligned showroom background (20% opacity as cover), global header, and global footer.
  */
 export const PublicLayout: React.FC<PublicLayoutProps> = ({
   children,
@@ -24,7 +24,7 @@ export const PublicLayout: React.FC<PublicLayoutProps> = ({
 }) => {
   return (
     <div className="min-h-screen w-full flex flex-col justify-between relative overflow-x-hidden bg-slate-900 dark:bg-[#0A0E1A] text-slate-900 dark:text-slate-100 font-sans selection:bg-purple-600 selection:text-white transition-colors duration-200">
-      {/* Aligned Showroom Background (80% opacity + subtle depth overlay) */}
+      {/* Aligned Showroom Background (20% opacity as cover + subtle depth overlay) */}
       <ShowroomBackground />
 
       {/* Global Public Header */}

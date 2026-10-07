@@ -1,4 +1,4 @@
-// Offline Sales Queue Manager: Background synchronization, queue status listener, and local fallback
+// Offline Sales Queue Manager: PWA Background Sync Service, Service Worker bridge, queue status listener, and local fallback
 
 import { api, getAuthToken } from './api.ts';
 import {
@@ -10,7 +10,10 @@ import {
   deleteOfflineSale,
   cacheCatalogOffline,
   resolveActiveStoreSubdomain,
+  resolveActiveTenantId,
 } from '../utils/offlineDb.ts';
+
+export const SW_SYNC_TAG = 'pos-offline-transactions-sync';
 
 type QueueListener = (
   pendingCount: number,
@@ -41,10 +44,14 @@ class OfflineQueueService {
       this.lastSyncedAtState = new Date();
     }
 
-    // Listen to browser network changes
-    window.addEventListener('online', this.handleOnline);
-    window.addEventListener('offline', this.handleOffline);
-    window.addEventListener('focus', this.handleWindowFocus);
+    // Listen to browser network, focus, visibility, and Service Worker background sync events
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.handleOnline);
+      window.addEventListener('offline', this.handleOffline);
+      window.addEventListener('focus', this.handleWindowFocus);
+      document.addEventListener('visibilitychange', this.handleVisibilityChange);
+      this.setupServiceWorkerBridge();
+    }
 
     // Initial check and start periodic background checks
     this.notify();
@@ -89,6 +96,95 @@ class OfflineQueueService {
   }
 
   /**
+   * Wire up two-way communication with the PWA Service Worker background sync module
+   */
+  private setupServiceWorkerBridge() {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    navigator.serviceWorker.addEventListener('message', async (event) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+
+      if (data.type === 'SW_BACKGROUND_SYNC_STARTED') {
+        this.isSyncingState = true;
+        this.notify();
+      } else if (data.type === 'SW_BACKGROUND_SYNC_PROGRESS') {
+        this.notify();
+      } else if (data.type === 'SW_BACKGROUND_SYNC_COMPLETED') {
+        this.isSyncingState = false;
+        const syncedCount = Number(data.synced || 0);
+        if (syncedCount > 0) {
+          this.recordRemoteSave();
+          this.primeCatalogCache().catch(() => {});
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(
+              new CustomEvent('pos:offline-sync-complete', {
+                detail: { synced: syncedCount, failed: Number(data.failed || 0), source: 'service-worker' },
+              })
+            );
+          }
+        } else {
+          this.notify();
+        }
+      } else if (data.type === 'SW_REQUEST_AUTH_TOKEN') {
+        const token = getAuthToken();
+        if (token && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'TRIGGER_BACKGROUND_SYNC',
+            authToken: token,
+          });
+        }
+      }
+    });
+  }
+
+  /**
+   * Register a native Service Worker Background Sync task (SyncManager API)
+   * and notify active Service Worker controller as fallback.
+   */
+  public async registerBackgroundSync(): Promise<void> {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      if ('sync' in registration && (registration as any).sync) {
+        await (registration as any).sync.register(SW_SYNC_TAG);
+      }
+
+      // Also register periodic background sync if supported and permitted
+      if ('periodicSync' in registration && (registration as any).periodicSync) {
+        try {
+          await (registration as any).periodicSync.register(SW_SYNC_TAG, {
+            minInterval: 60 * 1000,
+          });
+        } catch {
+          // Periodic background sync permission may not be granted in all browsers
+        }
+      }
+    } catch {
+      // Fallback handled by window online/periodic listeners
+    }
+  }
+
+  /**
+   * Trigger Service Worker background sync via postMessage if controller is active
+   */
+  private notifyServiceWorkerToSync() {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    try {
+      const token = getAuthToken();
+      if (navigator.serviceWorker.controller && token) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'TRIGGER_BACKGROUND_SYNC',
+          authToken: token,
+        });
+      }
+    } catch {
+      // Ignore if controller is not ready
+    }
+  }
+
+  /**
    * Ping backend directly to verify remote server responsiveness
    */
   public async checkBackendHealth(): Promise<boolean> {
@@ -102,10 +198,19 @@ class OfflineQueueService {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 4500);
+      const healthHeaders: Record<string, string> = { 'Cache-Control': 'no-cache' };
+      const activeTid = resolveActiveTenantId();
+      if (activeTid) {
+        healthHeaders['X-Tenant-Id'] = String(activeTid);
+      }
+      const token = getAuthToken();
+      if (token) {
+        healthHeaders['X-Auth-Token'] = token;
+      }
       const res = await fetch('/api/health', {
         method: 'GET',
         signal: controller.signal,
-        headers: { 'Cache-Control': 'no-cache' },
+        headers: healthHeaders,
       });
       clearTimeout(timer);
 
@@ -115,10 +220,15 @@ class OfflineQueueService {
       this.isOnlineState = isOk;
 
       if (isOk) {
-        // If we just reconnected, or if we have unsynced transactions, trigger sync
+        // If we just reconnected, or if we have unsynced transactions, trigger automatic sync
         if (wasDisconnected) {
-          console.log('[OfflineSync] Backend reconnected. Initiating automatic sync...');
+          console.log('[OfflineSync] Backend reconnected. Initiating automatic background sync...');
           this.syncPendingSales();
+        } else {
+          const pendingCount = await getPendingOfflineSalesCount();
+          if (pendingCount > 0 && !this.isSyncingState) {
+            this.syncPendingSales();
+          }
         }
       }
     } catch {
@@ -145,6 +255,7 @@ class OfflineQueueService {
   private handleOnline = async () => {
     console.log('[OfflineSync] Network back ONLINE. Checking backend and auto-syncing...');
     this.isOnlineState = true;
+    await this.registerBackgroundSync();
     await this.checkBackendHealth();
     await this.syncPendingSales();
   };
@@ -153,12 +264,19 @@ class OfflineQueueService {
     console.log('[OfflineSync] Network is OFFLINE. POS will queue checkouts locally in IndexedDB.');
     this.isOnlineState = false;
     this.isBackendConnectedState = false;
+    this.registerBackgroundSync();
     this.notify();
   };
 
   private handleWindowFocus = () => {
-    // When user returns to tab, perform a lightweight backend health check
+    // When user returns to tab, perform a lightweight backend health check & flush pending queue
     this.checkBackendHealth();
+  };
+
+  private handleVisibilityChange = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      this.checkBackendHealth();
+    }
   };
 
   private startPeriodicSync() {
@@ -170,29 +288,69 @@ class OfflineQueueService {
       this.checkBackendHealth();
     }, 12000);
 
-    // Every 20 seconds, if backend is connected, flush any unsynced offline sales
+    // Every 15 seconds, if backend is connected, flush any unsynced offline sales
     this.syncIntervalId = setInterval(() => {
       if (this.isBackendConnectedState && !this.isSyncingState) {
         this.syncPendingSales();
       }
-    }, 20000);
+    }, 15000);
+  }
+
+  private buildCheckoutPayload(sale: QueuedSale): any {
+    const payload: any = {
+      clientTxId: sale.clientTxId,
+      saleDate: sale.createdAt,
+      items: sale.items.map((i) => ({
+        productId: i.productId,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+        discount: i.discount,
+      })),
+      customerId: sale.customerId,
+      paymentMethod: sale.paymentMethod,
+      cashReceived: sale.cashReceived,
+      changeGiven: sale.changeGiven,
+      notes: sale.notes,
+      isMinPriceOverridden: Boolean(sale.isMinPriceOverridden),
+      adminOverrideEmail: sale.adminOverrideEmail,
+      adminOverridePassword: sale.adminOverridePassword,
+    };
+
+    if (sale.exchange && Array.isArray(sale.exchange.items) && sale.exchange.items.length > 0) {
+      payload.exchange = {
+        originalInvoiceNumber: sale.exchange.originalInvoiceNumber,
+        items: sale.exchange.items.map((ex) => ({
+          saleItemId: ex.saleItemId,
+          productId: ex.productId,
+          returnQty: ex.returnQty,
+        })),
+      };
+    }
+
+    return payload;
   }
 
   /**
-   * Save an offline sale to IndexedDB
+   * Save an offline sale to IndexedDB and register Service Worker Background Sync
    */
   public async enqueueSale(sale: Omit<QueuedSale, 'clientTxId' | 'createdAt' | 'status'>): Promise<QueuedSale> {
     const storeSubdomain = resolveActiveStoreSubdomain();
-    const clientTxId = `OFFLINE-${storeSubdomain.toUpperCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    const tenantId = resolveActiveTenantId(sale.tenantId);
+    const authToken = getAuthToken() || sale.authToken;
+    const prefix = tenantId ? `T${tenantId}` : storeSubdomain.toUpperCase();
+    const clientTxId = `OFFLINE-${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
     const queued: QueuedSale = {
       ...sale,
       storeSubdomain,
+      ...(tenantId ? { tenantId } : {}),
+      ...(authToken ? { authToken } : {}),
       clientTxId,
       createdAt: new Date().toISOString(),
       status: 'PENDING',
     };
 
     await queueOfflineSale(queued, storeSubdomain);
+    await this.registerBackgroundSync();
     await this.notify();
 
     // If online right now, attempt immediate background flush
@@ -215,6 +373,7 @@ class OfflineQueueService {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       this.isOnlineState = false;
       this.isBackendConnectedState = false;
+      await this.registerBackgroundSync();
       this.notify();
       return { synced: 0, failed: 0 };
     }
@@ -249,22 +408,7 @@ class OfflineQueueService {
         await updateOfflineSaleStatus(sale.clientTxId, 'SYNCING');
         this.notify();
 
-        const payload: any = {
-          clientTxId: sale.clientTxId,
-          saleDate: sale.createdAt,
-          items: sale.items.map((i) => ({
-            productId: i.productId,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            discount: i.discount,
-          })),
-          customerId: sale.customerId,
-          paymentMethod: sale.paymentMethod,
-          cashReceived: sale.cashReceived,
-          changeGiven: sale.changeGiven,
-          notes: sale.notes,
-        };
-
+        const payload = this.buildCheckoutPayload(sale);
         const res = await api.pos.checkout(payload);
 
         // Mark as synced with generated official invoice number
@@ -286,12 +430,13 @@ class OfflineQueueService {
           rawMsg.includes('abort');
 
         if (isNetworkError) {
-          console.warn(`[OfflineSync] Remote server temporarily unreachable while syncing ${sale.clientTxId}. Waiting for connection...`);
+          console.warn(`[OfflineSync] Remote server temporarily unreachable while syncing ${sale.clientTxId}. Registering background sync...`);
           this.isBackendConnectedState = false;
           this.isOnlineState = false;
           await updateOfflineSaleStatus(sale.clientTxId, 'PENDING', {
             errorMessage: 'Server offline (will auto-retry on reconnect)',
           });
+          await this.registerBackgroundSync();
           failed++;
           break; // Stop immediately, avoid flooding when network is unreachable
         } else {
@@ -311,6 +456,17 @@ class OfflineQueueService {
       try {
         localStorage.setItem('pos_last_synced_at', this.lastSyncedAtState.toISOString());
       } catch {}
+      // Refresh local product catalog cache with updated server stock levels
+      this.primeCatalogCache().catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('pos:offline-sync-complete', {
+            detail: { synced, failed, source: 'foreground' },
+          })
+        );
+      }
+    } else if (failed > 0) {
+      this.notifyServiceWorkerToSync();
     }
     this.notify();
     return { synced, failed };
@@ -353,22 +509,7 @@ class OfflineQueueService {
       await updateOfflineSaleStatus(sale.clientTxId, 'SYNCING');
       this.notify();
 
-      const payload: any = {
-        clientTxId: sale.clientTxId,
-        saleDate: sale.createdAt,
-        items: sale.items.map((i) => ({
-          productId: i.productId,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          discount: i.discount,
-        })),
-        customerId: sale.customerId,
-        paymentMethod: sale.paymentMethod,
-        cashReceived: sale.cashReceived,
-        changeGiven: sale.changeGiven,
-        notes: sale.notes,
-      };
-
+      const payload = this.buildCheckoutPayload(sale);
       const res = await api.pos.checkout(payload);
 
       await updateOfflineSaleStatus(sale.clientTxId, 'SYNCED', {
@@ -377,6 +518,14 @@ class OfflineQueueService {
         errorMessage: undefined,
       });
       this.recordRemoteSave();
+      this.primeCatalogCache().catch(() => {});
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('pos:offline-sync-complete', {
+            detail: { synced: 1, failed: 0, source: 'manual-retry' },
+          })
+        );
+      }
       return true;
     } catch (err: any) {
       const rawMsg = String(err?.message || err || '');

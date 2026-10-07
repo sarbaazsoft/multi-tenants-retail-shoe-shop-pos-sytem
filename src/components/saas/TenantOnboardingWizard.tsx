@@ -513,14 +513,17 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                             Store Name *
                           </label>
-                          <input
-                            type="text"
-                            required
-                            value={storeName}
-                            onChange={(e) => setStoreName(toTitleCaseLive(e.target.value))}
-                            placeholder="Apex Footwear"
-                            className="app-input capitalize w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm"
-                          />
+                          <div className="relative">
+                            <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              required
+                              value={storeName}
+                              onChange={(e) => setStoreName(toTitleCaseLive(e.target.value))}
+                              placeholder="Apex Footwear"
+                              className="app-input capitalize w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm"
+                            />
+                          </div>
                         </div>
 
                       </div>
@@ -564,14 +567,17 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                             Administrator Full Name *
                           </label>
-                          <input
-                            type="text"
-                            required
-                            value={ownerName}
-                            onChange={(e) => setOwnerName(toTitleCaseLive(e.target.value))}
-                            placeholder="e.g. Talhah Jan"
-                            className="app-input capitalize w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm"
-                          />
+                          <div className="relative">
+                            <UserCheck className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              required
+                              value={ownerName}
+                              onChange={(e) => setOwnerName(toTitleCaseLive(e.target.value))}
+                              placeholder="e.g. Talhah Jan"
+                              className="app-input capitalize w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm"
+                            />
+                          </div>
                         </div>
 
                         <div>
@@ -614,12 +620,13 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                             Administrator Password (Optional: Leave blank to keep current)
                           </label>
                           <div className="relative">
+                            <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             <input
                               type={showAdminPassword ? 'text' : 'password'}
                               value={adminPassword}
                               onChange={(e) => setAdminPassword(e.target.value)}
                               placeholder="Set master store password"
-                              className="app-input w-full pl-3.5 pr-10 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm font-mono"
+                              className="app-input w-full pl-9 pr-10 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm font-mono"
                             />
                             <button
                               type="button"

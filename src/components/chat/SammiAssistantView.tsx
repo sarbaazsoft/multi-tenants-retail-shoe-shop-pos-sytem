@@ -19,6 +19,15 @@ export interface ChatMessageItem {
   text: string;
   timestamp: string;
   modelUsed?: string;
+  inspectedFiles?: string[];
+  liveDbSnapshot?: {
+    tenantId?: number;
+    storeName?: string;
+    pricingPolicy?: string;
+    totalProducts?: number;
+    totalStockPairs?: number;
+    lowStockCount?: number;
+  };
 }
 
 interface SammiAssistantViewProps {
@@ -122,6 +131,8 @@ export const SammiAssistantView: React.FC<SammiAssistantViewProps> = ({
         text: res.reply || `Sammi is ready to help at ${storeName}.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         modelUsed: res.modelUsed || targetModel,
+        inspectedFiles: Array.isArray(res.inspectedFiles) ? res.inspectedFiles : undefined,
+        liveDbSnapshot: res.liveDbSnapshot || undefined,
       };
 
       setMessages((prev) => [...prev, modelReply]);
@@ -328,6 +339,25 @@ export const SammiAssistantView: React.FC<SammiAssistantViewProps> = ({
               {/* Message text content */}
               {renderMessageContent(msg.text)}
 
+              {/* Real-time Codebase & Database Inspection Indicator */}
+              {msg.role === 'model' && (msg.liveDbSnapshot || (msg.inspectedFiles && msg.inspectedFiles.length > 0)) && (
+                <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-purple-900/30 flex flex-wrap items-center gap-1.5 text-[11px]">
+                  {msg.liveDbSnapshot && (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/50 font-medium">
+                      Live DB ({msg.liveDbSnapshot.totalProducts ?? 0} products • {msg.liveDbSnapshot.pricingPolicy || 'FIXED'})
+                    </span>
+                  )}
+                  {msg.inspectedFiles && msg.inspectedFiles.map((file, fIdx) => (
+                    <span
+                      key={fIdx}
+                      className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-200/70 dark:border-purple-800/50 font-mono"
+                    >
+                      {file.split('/').pop()}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {/* Message Footer: Timestamp and copy button */}
               <div className={`flex items-center justify-between gap-2 mt-3 pt-2 text-xs border-t ${
                 msg.role === 'user'
@@ -388,6 +418,7 @@ export const SammiAssistantView: React.FC<SammiAssistantViewProps> = ({
           {/* Quick suggested chips */}
           <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-1 scrollbar-none">
             {[
+              'CSV file kaise import karein?',
               'Pricing Policy kaise kaam karti hai?',
               'Add Product mein size aur color kahan hai?',
               'Joota wapis ya exchange kaise karein?',

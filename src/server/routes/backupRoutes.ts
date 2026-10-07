@@ -233,6 +233,22 @@ router.post('/restore', requireAuth, requireAdmin, async (req: AuthenticatedRequ
           // Strip any fields that don't belong to schema if necessary, or sanitize
           const cleanRow = { ...row };
           if (tableName === 'company_settings') {
+            if (Array.isArray(cleanRow.deleted_product_ids) && cleanRow.deleted_product_ids.length > 0) {
+              const targetTid = Number(cleanRow.tenant_id) || 1;
+              await pgClient
+                .query(
+                  `UPDATE tenants
+                   SET deleted_product_ids = (
+                     SELECT COALESCE(array_agg(DISTINCT x ORDER BY x ASC), '{}')
+                     FROM unnest(array_cat(COALESCE(deleted_product_ids, '{}'), $1::int[])) AS x
+                     WHERE x >= 1
+                   )
+                   WHERE id = $2`,
+                  [cleanRow.deleted_product_ids, targetTid]
+                )
+                .catch(() => {});
+            }
+            delete cleanRow.deleted_product_ids;
             delete cleanRow.name;
             delete cleanRow.tax_number;
             delete cleanRow.min_profit_margin;
@@ -368,6 +384,7 @@ router.post('/import-sql', requireAuth, requireAdmin, async (req: AuthenticatedR
     }
 
     await pgClient.waitReady;
+    await ensureDatabaseSchema();
     await pgClient.exec(sql);
     await ensureDatabaseSchema();
 

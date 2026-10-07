@@ -34,7 +34,7 @@ import {
   cacheCatalogOffline,
   lookupCachedProductOffline,
   searchCachedProductsOffline,
-  resolveActiveStoreSubdomain,
+  resolveActiveTenantId,
 } from '../../utils/offlineDb.ts';
 import { useOfflineSync } from '../../utils/useOfflineSync.ts';
 import { OfflineSyncModal } from './OfflineSyncModal.tsx';
@@ -192,8 +192,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [isOfflineModalOpen, setIsOfflineModalOpen] = useState(false);
   const [offlineNotice, setOfflineNotice] = useState<string | null>(null);
 
-  const activeStoreSlug = resolveActiveStoreSubdomain(
-    companySettings?.slug || currentUser?.storeSubdomain || currentUser?.slug || null
+  const activeTenantId = resolveActiveTenantId(
+    currentUser?.tenantId ?? currentUser?.tenant_id ?? companySettings?.tenant_id ?? companySettings?.tenantId ?? null
   );
 
   // Sync and cache store catalog products for offline billing
@@ -201,7 +201,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     try {
       const res = await api.products.list({ limit: 500 });
       if (res?.products && Array.isArray(res.products) && res.products.length > 0) {
-        await cacheCatalogOffline(res.products, activeStoreSlug);
+        await cacheCatalogOffline(res.products, activeTenantId);
       }
     } catch {
       // Offline cache will be used
@@ -220,13 +220,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     };
     window.addEventListener('focus', handleWindowFocus);
     return () => window.removeEventListener('focus', handleWindowFocus);
-  }, [activeStoreSlug]);
+  }, [activeTenantId]);
 
   useEffect(() => {
     if (isOnline) {
       syncStoreCatalogForOffline();
     }
-  }, [isOnline, activeStoreSlug]);
+  }, [isOnline, activeTenantId]);
 
   // Sync initial exchange from parent / Returns view
   useEffect(() => {
@@ -441,7 +441,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         if (!matchedProduct) {
           const searchRes = await api.products.list({ search: query }).catch(() => ({ products: [] }));
           if (searchRes.products && searchRes.products.length > 0) {
-            await cacheCatalogOffline(searchRes.products, activeStoreSlug).catch(() => {});
+            await cacheCatalogOffline(searchRes.products, activeTenantId).catch(() => {});
             matchedProduct =
               searchRes.products.find(
                 (p: any) =>
@@ -454,9 +454,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         }
       }
 
-      // 2. OFFLINE & STORE CACHE LOOKUP: Lookup from store-subdomain-scoped offline catalog cache
+      // 2. OFFLINE & TENANT CACHE LOOKUP: Lookup from tenantId-scoped offline catalog cache
       if (!matchedProduct) {
-        const cached = await lookupCachedProductOffline(query, activeStoreSlug).catch(() => null);
+        const cached = await lookupCachedProductOffline(query, activeTenantId).catch(() => null);
         if (cached) {
           matchedProduct = {
             ...cached,
@@ -582,7 +582,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       if (val.trim().length >= 1 && scanBurstCountRef.current < 4) {
         const isCurrentlyOffline = !isOnline || (typeof navigator !== 'undefined' && !navigator.onLine);
         if (isCurrentlyOffline) {
-          const offlineResults = await searchCachedProductsOffline(val.trim(), activeStoreSlug).catch(() => []);
+          const offlineResults = await searchCachedProductsOffline(val.trim(), activeTenantId).catch(() => []);
           setSearchResults(offlineResults);
           return;
         }
@@ -591,7 +591,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           const list = res.products || [];
           setSearchResults(list);
         } catch {
-          const offlineResults = await searchCachedProductsOffline(val.trim(), activeStoreSlug).catch(() => []);
+          const offlineResults = await searchCachedProductsOffline(val.trim(), activeTenantId).catch(() => []);
           setSearchResults(offlineResults);
         }
       } else {
@@ -600,11 +600,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return;
     }
 
-    // Manual / Catalog Search mode: show matching articles from online or store-scoped offline catalog
+    // Manual / Catalog Search mode: show matching articles from online or tenant-scoped offline catalog
     if (val.trim().length >= 1) {
       const isCurrentlyOffline = !isOnline || (typeof navigator !== 'undefined' && !navigator.onLine);
       if (isCurrentlyOffline) {
-        const offlineResults = await searchCachedProductsOffline(val.trim(), activeStoreSlug).catch(() => []);
+        const offlineResults = await searchCachedProductsOffline(val.trim(), activeTenantId).catch(() => []);
         setSearchResults(offlineResults);
         return;
       }
@@ -622,12 +622,12 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           triggerFindAndAddProduct(val);
         }
       } catch {
-        // Fallback to store-scoped local IndexedDB/LocalStorage product search
-        const offlineResults = await searchCachedProductsOffline(val.trim(), activeStoreSlug).catch(() => []);
+        // Fallback to tenant-scoped local IndexedDB/LocalStorage product search
+        const offlineResults = await searchCachedProductsOffline(val.trim(), activeTenantId).catch(() => []);
         setSearchResults(offlineResults);
       }
     } else {
-      const offlineResults = await searchCachedProductsOffline('', activeStoreSlug, 30).catch(() => []);
+      const offlineResults = await searchCachedProductsOffline('', activeTenantId, 30).catch(() => []);
       setSearchResults(offlineResults);
     }
   };
@@ -909,6 +909,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           changeGiven: Number(changeDue) || 0,
           notes,
           totalAmount: netTotalPayable,
+          isMinPriceOverridden: Boolean(adminOverrideCreds || currentUser.role === 'ADMIN'),
+          adminOverrideEmail: adminOverrideCreds?.email || undefined,
+          adminOverridePassword: adminOverrideCreds?.pass || undefined,
+          exchange: activeExchange || null,
         });
 
         playAudioFeedback.saleSuccess();
@@ -1006,6 +1010,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             changeGiven: Number(changeDue) || 0,
             notes,
             totalAmount: netTotalPayable,
+            isMinPriceOverridden: Boolean(adminOverrideCreds || currentUser.role === 'ADMIN'),
+            adminOverrideEmail: adminOverrideCreds?.email || undefined,
+            adminOverridePassword: adminOverrideCreds?.pass || undefined,
+            exchange: activeExchange || null,
           });
 
           playAudioFeedback.saleSuccess();
@@ -1102,7 +1110,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     focusScannerInput();
                     const cachedList = await searchCachedProductsOffline(
                       barcodeInput.trim(),
-                      activeStoreSlug,
+                      activeTenantId,
                       30
                     ).catch(() => []);
                     setSearchResults(cachedList);

@@ -135,15 +135,201 @@ export const SaasLandingPageAlternate: React.FC<Props> = ({ availableTenants, on
 
       <footer id="about" className="bg-[#0A1633] py-7 text-white"><div className="mx-auto grid max-w-7xl gap-5 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">{[['Works Offline', 'Keep working when the internet drops.'], ['Secure & Reliable', 'Your data, always safe.'], ['Your whole team', 'Owners and cashiers in one place.'], ['Sales & Stock Reports', 'Sales, profit and low-stock alerts.']].map(([title, desc]) => <div key={title} className="flex items-center gap-3 border-white/15 sm:border-r sm:last:border-0"><ShieldCheck className="h-7 w-7 shrink-0 text-blue-300" /><div><h3 className="text-sm font-extrabold">{title}</h3><p className="mt-1 text-xs text-blue-100/75">{desc}</p></div></div>)}</div><p className="mx-auto mt-7 max-w-7xl border-t border-white/15 px-4 pt-5 text-xs text-blue-100/70 sm:px-6 lg:px-8">ShoePOS · Retail Shoe Shop System</p></footer>
 
-      {requestOpen && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm"><div role="dialog" aria-modal="true" aria-labelledby="request-title" className="relative my-auto w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl sm:p-8"><button aria-label="Close" onClick={() => setRequestOpen(false)} className="absolute right-5 top-5 rounded-lg bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"><X className="h-4 w-4" /></button><span className="inline-block rounded-full bg-[#DCEBFF] px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-[#0066FF]">Start Your ShoePOS Store</span><h2 id="request-title" className="mt-2 text-xl font-extrabold">Register Your Shoe Store</h2><p className="mt-1 text-xs text-slate-500">Tell us about your shop and get started with sales and stock management.</p>
-          {error && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}
-          {success ? <div className="mt-5 space-y-4 rounded-xl border border-emerald-200 bg-emerald-50 p-5"><p className="flex items-center gap-2 font-bold text-emerald-700"><CheckCircle2 className="h-5 w-5" />Store Request Submitted!</p><p className="text-xs leading-relaxed text-emerald-800">{success}</p><div className="flex flex-wrap gap-2"><button onClick={() => { setRequestOpen(false); onOpenSuperAdmin(); }} className="rounded-xl bg-[#0066FF] px-4 py-2.5 text-xs font-bold text-white">Open SuperAdmin C-Panel to Approve</button><button onClick={() => { setSuccess(''); setRequestOpen(false); }} className="rounded-xl border border-slate-300 px-4 py-2.5 text-xs font-bold text-slate-700">Close</button></div></div> : <form onSubmit={submit} className="mt-5 space-y-4">
-            <label className="block text-xs font-bold text-slate-700">Store Name *<span className="relative mt-1 block"><Building2 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input required value={storeName} onChange={(event) => setStoreName(toTitleCaseLive(event.target.value))} className="w-full rounded-xl border border-slate-300 py-2 pl-9 pr-3 text-sm text-slate-900 focus:border-[#0066FF] focus:outline-none" /></span></label>
-            <div className="grid gap-3 sm:grid-cols-2"><label className="block text-xs font-bold text-slate-700">Owner Email *<span className="relative mt-1 block"><Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input required type="email" value={ownerEmail} onChange={(event) => setOwnerEmail(event.target.value)} className="w-full rounded-xl border border-slate-300 py-2 pl-9 pr-3 text-sm text-slate-900 focus:border-[#0066FF] focus:outline-none" /></span></label><label className="block text-xs font-bold text-slate-700">Phone / WhatsApp<span className="relative mt-1 block"><Phone className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><input value={ownerPhone} onChange={(event) => setOwnerPhone(event.target.value)} className="w-full rounded-xl border border-slate-300 py-2 pl-9 pr-3 text-sm text-slate-900 focus:border-[#0066FF] focus:outline-none" /></span></label></div>
-            <label className="block text-xs font-bold text-slate-700">Subscription Plan<select value={plan} onChange={(event) => setPlan(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#0066FF] focus:outline-none"><option value="6_MONTHS_RS_10000">6 Months — Rs. 10,000</option><option value="1_YEAR_RS_18000">1 Year — Rs. 18,000 (Most Popular)</option></select></label>
-            <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 py-3 text-sm font-bold text-white shadow-md shadow-purple-600/25 transition hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 disabled:opacity-50">{busy ? 'Submitting Request...' : 'Submit Store Request'} <ArrowRight className="h-4 w-4" /></button>
-          </form>}
-        </div></div>}
+      {requestOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto"
+          onClick={() => setRequestOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="request-title"
+            className="relative w-full max-w-xl bg-white dark:bg-[#131B2E] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] border border-slate-200 dark:border-purple-800/80 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header aligned with ProductFormModal */}
+            <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 border-b border-slate-200 dark:border-purple-800/80 text-slate-800 dark:text-white px-6 py-4 shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:bg-purple-500/20 dark:text-purple-300 border border-blue-500/20 dark:border-purple-400/30 flex items-center justify-center font-bold shadow-2xs shrink-0">
+                    <Store className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 id="request-title" className="font-bold text-base text-slate-900 dark:text-white tracking-tight">
+                      Register Your Shoe Store
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-purple-200/80">
+                      Tell us about your shop and get started with sales and stock management
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setRequestOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:text-purple-300 dark:hover:text-white rounded-lg hover:bg-slate-200/60 dark:hover:bg-white/10 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {success ? (
+              <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs bg-slate-50/50 dark:bg-[#070B14]">
+                <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs space-y-3">
+                  <p className="flex items-center gap-2 font-bold text-sm text-emerald-700 dark:text-emerald-300">
+                    <CheckCircle2 className="h-5 w-5" />
+                    Store Request Submitted!
+                  </p>
+                  <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">{success}</p>
+                </div>
+                <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900/90 dark:via-indigo-950/85 dark:to-slate-900 border-t border-gray-200 dark:border-purple-800/80 -mx-6 -mb-6 px-6 py-4 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSuccess('');
+                      setRequestOpen(false);
+                    }}
+                    className="btn-secondary px-4 py-2.5 text-xs font-semibold cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRequestOpen(false);
+                      onOpenSuperAdmin();
+                    }}
+                    style={{ color: '#ffffff' }}
+                    className="btn-primary btn-pure-white px-5 py-2.5 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-md"
+                  >
+                    <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
+                      Open SuperAdmin C-Panel to Approve
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <form
+                  id="alt-landing-store-request-form"
+                  onSubmit={submit}
+                  className="flex-1 overflow-y-auto p-6 space-y-5 text-xs bg-slate-50/50 dark:bg-[#070B14]"
+                >
+                  {error && (
+                    <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                      {error}
+                    </p>
+                  )}
+
+                  {/* Card 1: Store & Contact Details */}
+                  <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-gray-200 dark:border-[#1A263D] shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+                      <h5 className="font-bold text-gray-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                        <Building2 className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                        <span>1. Store &amp; Contact Information</span>
+                      </h5>
+                      <span className="text-[11px] text-gray-400 dark:text-slate-500 font-medium">Shop Details</span>
+                    </div>
+
+                    <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
+                      Store Name <span className="text-red-500">*</span>
+                      <span className="relative mt-1.5 block">
+                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
+                        <input
+                          required
+                          value={storeName}
+                          onChange={(event) => setStoreName(toTitleCaseLive(event.target.value))}
+                          placeholder="e.g. Metro Footwear"
+                          className="capitalize w-full rounded-xl border border-gray-300 dark:border-purple-400/40 bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-3 text-xs font-medium text-gray-900 dark:text-purple-100 focus:border-indigo-600 focus:outline-none"
+                        />
+                      </span>
+                    </label>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
+                        Owner Email <span className="text-red-500">*</span>
+                        <span className="relative mt-1.5 block">
+                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
+                          <input
+                            required
+                            type="email"
+                            value={ownerEmail}
+                            onChange={(event) => setOwnerEmail(event.target.value)}
+                            placeholder="owner@metroshoes.pk"
+                            className="w-full rounded-xl border border-gray-300 dark:border-purple-400/40 bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-3 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 focus:border-indigo-600 focus:outline-none"
+                          />
+                        </span>
+                      </label>
+                      <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
+                        Phone / WhatsApp
+                        <span className="relative mt-1.5 block">
+                          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
+                          <input
+                            value={ownerPhone}
+                            onChange={(event) => setOwnerPhone(event.target.value)}
+                            placeholder="+92 300 1234567"
+                            className="w-full rounded-xl border border-gray-300 dark:border-purple-400/40 bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-3 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 focus:border-indigo-600 focus:outline-none"
+                          />
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Subscription Plan */}
+                  <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-gray-200 dark:border-[#1A263D] shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-800">
+                      <h5 className="font-bold text-gray-800 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                        <span>2. Subscription Plan</span>
+                      </h5>
+                      <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                        Full POS Access
+                      </span>
+                    </div>
+
+                    <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
+                      Select Plan
+                      <select
+                        value={plan}
+                        onChange={(event) => setPlan(event.target.value)}
+                        className="mt-1.5 w-full rounded-xl border border-gray-300 dark:border-purple-400/40 bg-white dark:bg-purple-500/20 px-3.5 py-2.5 text-xs font-semibold text-gray-900 dark:text-purple-100 focus:border-indigo-600 focus:outline-none cursor-pointer"
+                      >
+                        <option value="6_MONTHS_RS_10000">6 Months — Rs. 10,000</option>
+                        <option value="1_YEAR_RS_18000">1 Year — Rs. 18,000 (Most Popular)</option>
+                      </select>
+                    </label>
+                  </div>
+                </form>
+
+                {/* Footer aligned with ProductFormModal */}
+                <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900/90 dark:via-indigo-950/85 dark:to-slate-900 border-t border-gray-200 dark:border-purple-800/80 px-6 py-4 flex items-center justify-between shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setRequestOpen(false)}
+                    className="btn-secondary px-4 py-2.5 text-xs font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    form="alt-landing-store-request-form"
+                    disabled={busy}
+                    style={{ color: '#ffffff' }}
+                    className="btn-primary btn-pure-white px-6 py-2.5 text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50"
+                  >
+                    <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
+                      {busy ? 'Submitting Request...' : 'Submit Store Request'}
+                    </span>
+                    <ArrowRight className="h-4 w-4 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 };

@@ -83,15 +83,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [isAdmin, initialTab]);
 
-  // Store Subscription & App Key Info State
+  // Store Subscription Info State
   const extractSubInfo = (src: any) => {
     const sub = src?.subscriptionInfo || src || {};
-    const appKey =
-      sub?.appKey ||
-      sub?.app_key ||
-      src?.appKey ||
-      src?.app_key ||
-      'APP-KEY-TJS1-9X4A';
     const rawPlan = String(
       sub?.subscriptionPlan ||
         sub?.subscription_plan ||
@@ -145,7 +139,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       null;
 
     return {
-      appKey,
       subscriptionPlan,
       subscriptionStartDate,
       subscriptionEndDate,
@@ -158,7 +151,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [subscriptionInfo, setSubscriptionInfo] = useState(() =>
     extractSubInfo(companySettings)
   );
-  const [copiedAppKey, setCopiedAppKey] = useState(false);
 
   // Subscription Renewal Request Modal State
   const [isRenewModalOpen, setIsRenewModalOpen] = useState(false);
@@ -230,16 +222,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleCopyAppKey = (keyToCopy?: string) => {
-    const val = keyToCopy || subscriptionInfo.appKey || companySettings?.appKey || companySettings?.app_key || '';
-    if (!val) return;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(val).catch(() => {});
-    }
-    setCopiedAppKey(true);
-    setTimeout(() => setCopiedAppKey(false), 2000);
-  };
-
   // Store Settings Form
   const [formData, setFormData] = useState({
     company_name: companySettings?.company_name || companySettings?.companyName || companySettings?.name || '',
@@ -269,7 +251,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       companySettings?.isInstalled ??
       true
     ),
-    app_key: companySettings?.appKey || companySettings?.app_key || 'APP-KEY-TJS1-9X4A',
     subscription_plan: companySettings?.subscriptionPlan || companySettings?.subscription_plan || 'YEARLY',
     subscription_start_date: companySettings?.subscriptionStartDate || companySettings?.subscription_start_date || '',
     subscription_end_date: companySettings?.subscriptionEndDate || companySettings?.subscription_end_date || '',
@@ -320,7 +301,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             s?.isInstalled ??
             true
           ),
-          app_key: mergedSub.appKey,
           subscription_plan: mergedSub.subscriptionPlan,
           subscription_start_date: mergedSub.subscriptionStartDate,
           subscription_end_date: mergedSub.subscriptionEndDate,
@@ -365,7 +345,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           companySettings?.isInstalled ??
           true
         ),
-        app_key: nextSub.appKey,
         subscription_plan: nextSub.subscriptionPlan,
         subscription_start_date: nextSub.subscriptionStartDate,
         subscription_end_date: nextSub.subscriptionEndDate,
@@ -809,38 +788,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        {/* Store Subscription & App Key Header Strip */}
+        {/* Store Subscription Header Strip */}
         <div className="pt-3 border-t border-slate-200/80 dark:border-purple-800/50 flex flex-wrap items-center justify-between gap-2.5 text-xs">
           <div className="flex flex-wrap items-center gap-2">
-            {/* App Key */}
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-purple-800/60 text-slate-700 dark:text-purple-200 font-mono">
-              <KeyRound className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-              <span className="text-[11px] uppercase text-slate-400 dark:text-purple-300/70 font-sans font-bold">App Key:</span>
-              <span className="font-bold text-slate-900 dark:text-white select-all">
-                {subscriptionInfo.appKey || formData.app_key || companySettings?.appKey || companySettings?.app_key || 'APP-KEY-TJS1-9X4A'}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  handleCopyAppKey(
-                    subscriptionInfo.appKey ||
-                      formData.app_key ||
-                      companySettings?.appKey ||
-                      companySettings?.app_key
-                  )
-                }
-                className="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-purple-800/50 text-slate-400 hover:text-purple-600 dark:hover:text-white transition cursor-pointer flex items-center gap-1"
-                title="Copy App Key"
-              >
-                <Copy className="w-3 h-3" />
-                {copiedAppKey && (
-                  <span className="text-[10px] font-sans font-bold text-emerald-600 dark:text-emerald-400">
-                    Copied!
-                  </span>
-                )}
-              </button>
-            </div>
-
             {/* Subscription Status */}
             {(() => {
               const rawStatus = String(
@@ -1112,19 +1062,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           )}
 
-          {/* CARD 0: STORE SUBSCRIPTION & APP KEY INFO */}
+          {/* CARD 0: STORE SUBSCRIPTION INFO */}
           <div className="bg-white dark:bg-[#131B2E] p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-purple-800/60 shadow-sm transition-colors">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-5 border-b border-slate-100 dark:border-purple-900/40 gap-3">
               <div className="flex items-center space-x-3.5">
                 <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-500/20 border border-purple-100 dark:border-purple-400/30 text-purple-600 dark:text-purple-300 flex items-center justify-center shrink-0 shadow-2xs">
-                  <KeyRound className="w-5 h-5" />
+                  <Calendar className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
-                    Store Subscription &amp; License Key
+                    Store Subscription
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-purple-200/70 mt-0.5 font-normal">
-                    Active tenant license key, subscription plan cycle, activation date, and expiry status
+                    Active tenant subscription plan cycle, activation date, and expiry status
                   </p>
                 </div>
               </div>
@@ -1197,49 +1147,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* App Key Field */}
-              <div className="sm:col-span-2">
-                <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center justify-between">
-                  <span>
-                    Store App Key <span className="text-slate-400 dark:text-slate-500 font-normal text-[11px] ml-1">(app_key)</span>
-                  </span>
-                  <span className="text-[10px] font-mono font-bold text-purple-600 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800/60 px-2 py-0.5 rounded-full">
-                    Unique Store Key
-                  </span>
-                </label>
-                <div className="relative flex items-center">
-                  <KeyRound className="w-4 h-4 text-purple-500 dark:text-purple-400 absolute left-3.5 pointer-events-none" />
-                  <input
-                    type="text"
-                    readOnly
-                    value={
-                      subscriptionInfo.appKey ||
-                      formData.app_key ||
-                      companySettings?.appKey ||
-                      companySettings?.app_key ||
-                      'APP-KEY-TJS1-9X4A'
-                    }
-                    className="w-full h-11 pl-10 pr-24 rounded-xl border border-slate-300 dark:border-purple-800/70 bg-slate-50 dark:bg-[#060B18]/90 font-mono font-bold text-xs text-slate-900 dark:text-white outline-none select-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleCopyAppKey(
-                        subscriptionInfo.appKey ||
-                          formData.app_key ||
-                          companySettings?.appKey ||
-                          companySettings?.app_key
-                      )
-                    }
-                    className="absolute right-2 px-2.5 py-1.5 rounded-lg bg-purple-100 hover:bg-purple-200 dark:bg-purple-500/20 dark:hover:bg-purple-500/30 text-purple-700 dark:text-purple-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                  >
-                    <Copy className="w-3 h-3" />
-                    <span>{copiedAppKey ? 'Copied!' : 'Copy'}</span>
-                  </button>
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Subscription Plan */}
               <div>
                 <label className="text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 block">
@@ -2717,10 +2625,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0A0E1A] border border-slate-200 dark:border-purple-900/50 grid grid-cols-2 gap-3 text-xs">
                 <div>
                   <span className="text-[10px] font-mono uppercase text-slate-400 dark:text-slate-500 block">
-                    Store App Key
+                    Current Plan
                   </span>
                   <span className="font-mono font-bold text-slate-900 dark:text-white">
-                    {subscriptionInfo.appKey || formData.app_key || 'APP-KEY-TJS1-9X4A'}
+                    {subscriptionInfo.subscriptionPlan === '6_MONTHS' ? '6 Months Plan' : 'Yearly Plan'}
                   </span>
                 </div>
                 <div>

@@ -73,18 +73,9 @@ export const SuspendedStoreView: React.FC<SuspendedStoreViewProps> = ({
           </p>
         )}
 
-        {/* Subscription & App Key Summary Card */}
+        {/* Subscription Summary Card */}
         {tenant && (
           <div className="rounded-xl bg-slate-950/90 border border-slate-800 p-4 mb-5 space-y-2.5 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400 flex items-center gap-1.5">
-                <KeyRound className="w-3.5 h-3.5 text-purple-400" />
-                App Key:
-              </span>
-              <span className="font-mono font-bold text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/30">
-                {tenant.appKey || 'APP-KEY-PENDING'}
-              </span>
-            </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-400 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-amber-400" />

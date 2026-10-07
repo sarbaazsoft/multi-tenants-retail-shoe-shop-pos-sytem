@@ -1,4 +1,5 @@
 import React from 'react';
+import shoeStoreBg from '../../assets/images/shoe_store_blurred_bg_1790706924465.jpg';
 
 interface ShowroomBackgroundProps {
   className?: string;
@@ -6,26 +7,30 @@ interface ShowroomBackgroundProps {
 
 /**
  * ShowroomBackground
- * Aligned showroom background layer with 80% opacity and subtle depth overlay
- * ensuring crisp text legibility while keeping the footwear showroom vividly visible.
+ * Aligned showroom background layer with 20% opacity (`opacity-20`) as `bg-cover`
+ * across AuthModal, Loading Platform, InstallationWizard, TenantOnboardingWizard,
+ * SuperAdmin Login, SuspendedStoreView, and UnknownStore404View routes.
  */
 export const ShowroomBackground: React.FC<ShowroomBackgroundProps> = ({ className = '' }) => {
   return (
     <>
-      {/* Showroom Background Image Layer (80% visible / opacity-80) */}
+      {/* Showroom Background Image Layer (20% opacity / opacity-20 as cover) */}
       <div
         id="showroom-bg-image-layer"
-        className={`fixed inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-80 pointer-events-none transition-opacity duration-300 ${className}`}
+        className={`fixed inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-20 pointer-events-none transition-opacity duration-300 ${className}`}
         style={{
-          backgroundImage: "url('/assets/images/hd-07.jpg')",
+          backgroundImage: `url(${shoeStoreBg})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.2,
         }}
         aria-hidden="true"
       />
 
-      {/* Subtle depth overlay ensuring crisp text contrast while keeping showroom 80% visible */}
+      {/* Subtle depth overlay ensuring crisp text contrast */}
       <div
         id="showroom-bg-depth-overlay"
-        className="fixed inset-0 z-0 bg-slate-900/10 dark:bg-slate-950/25 pointer-events-none"
+        className="fixed inset-0 z-0 bg-slate-900/10 dark:bg-slate-950/20 pointer-events-none"
         aria-hidden="true"
       />
     </>

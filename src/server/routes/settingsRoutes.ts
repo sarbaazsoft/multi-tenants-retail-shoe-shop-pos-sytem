@@ -5,7 +5,6 @@ import jwt from 'jsonwebtoken';
 import { pgClient } from '../../db/index.ts';
 import {
   ensureSaasControlPlane,
-  generateUniqueAppKey,
   normalizeSubscriptionPlan,
   calculateSubscriptionEndDate,
   syncExpiredTenantSubscriptions,
@@ -73,11 +72,6 @@ async function ensureTenantSubscriptionPopulated(tenantId: number): Promise<any>
     if (!t) return null;
 
     let needsUpdate = false;
-    let appKey = t.app_key && String(t.app_key).trim() ? String(t.app_key).trim() : '';
-    if (!appKey) {
-      appKey = await generateUniqueAppKey();
-      needsUpdate = true;
-    }
 
     const plan = normalizeSubscriptionPlan(
       t.subscription_plan || (t.slug === 'mystore' || t.slug === 'apex-boots' ? '6_MONTHS' : 'YEARLY')
@@ -110,15 +104,14 @@ async function ensureTenantSubscriptionPopulated(tenantId: number): Promise<any>
     if (needsUpdate) {
       const updated = await pgClient.query(
         `UPDATE tenants
-         SET app_key = $1,
-             subscription_plan = $2,
-             subscription_start_date = $3,
-             subscription_end_date = $4,
-             subscription_status = $5,
+         SET subscription_plan = $1,
+             subscription_start_date = $2,
+             subscription_end_date = $3,
+             subscription_status = $4,
              updated_at = NOW()
-         WHERE id = $6
+         WHERE id = $5
          RETURNING *`,
-        [appKey, plan, startDt.toISOString(), endDt.toISOString(), subStatus, t.id]
+        [plan, startDt.toISOString(), endDt.toISOString(), subStatus, t.id]
       );
       return updated.rows[0] || t;
     }
@@ -157,7 +150,6 @@ async function getPendingRenewalRequest(tenantId: number, slug?: string): Promis
 }
 
 function buildSubscriptionInfo(tenantRow?: any, pendingRenewalRequest?: any | null) {
-  const appKey = tenantRow?.app_key || 'APP-KEY-TJS1-9X4A';
   const subscriptionPlan = normalizeSubscriptionPlan(tenantRow?.subscription_plan || 'YEARLY');
   const startDt = tenantRow?.subscription_start_date
     ? new Date(tenantRow.subscription_start_date)
@@ -183,8 +175,6 @@ function buildSubscriptionInfo(tenantRow?: any, pendingRenewalRequest?: any | nu
       : 'ACTIVE';
 
   return {
-    appKey,
-    app_key: appKey,
     plan: subscriptionPlan,
     subscriptionPlan,
     subscription_plan: subscriptionPlan,
@@ -222,8 +212,6 @@ function formatSettingsResponse(s: any, tenantRow?: any, pendingRenewalRequest?:
       tenantId: s.tenant_id || tenantRow?.id || 1,
       slug: tenantRow?.slug || '',
       tenantStatus: tenantRow?.status || 'ACTIVE',
-    appKey: subInfo.appKey,
-    app_key: subInfo.appKey,
     subscriptionPlan: subInfo.subscriptionPlan,
     subscription_plan: subInfo.subscriptionPlan,
     subscriptionStartDate: subInfo.subscriptionStartDate,
@@ -291,7 +279,7 @@ function formatSettingsResponse(s: any, tenantRow?: any, pendingRenewalRequest?:
   };
 }
 
-// GET /api/settings/subscription - Dedicated endpoint to fetch populated subscriptionInfo and appKey for active store
+// GET /api/settings/subscription - Dedicated endpoint to fetch populated subscriptionInfo for active store
 router.get('/subscription', async (req: Request, res: Response) => {
   try {
     await ensureSettingsPricingColumns();
@@ -303,7 +291,6 @@ router.get('/subscription', async (req: Request, res: Response) => {
       tenantId: tenantRow?.id || tenantId,
       slug: tenantRow?.slug || '',
       storeName: tenantRow?.name || 'Retail Store',
-      appKey: subscriptionInfo.appKey,
       pendingRenewalRequest: pendingRenewal,
       subscriptionInfo,
     });
@@ -313,7 +300,6 @@ router.get('/subscription', async (req: Request, res: Response) => {
       tenantId: 1,
       slug: '',
       storeName: 'Retail Store',
-      appKey: fallbackSub.appKey,
       pendingRenewalRequest: null,
       subscriptionInfo: fallbackSub,
     });
@@ -348,8 +334,8 @@ router.post('/renew-subscription', async (req: Request, res: Response) => {
     const planLabel = requestedPlan === '6_MONTHS' ? '6 Months' : 'Yearly (12 Months)';
     const customNote = String(req.body?.notes || req.body?.message || '').trim();
     const fullNotes = customNote
-      ? `[RENEWAL REQUEST • ${planLabel} • Key: ${tenantRow.app_key || 'N/A'}] ${customNote}`
-      : `Subscription renewal/extension request (${planLabel}) for store ${tenantRow.name} • App Key: ${tenantRow.app_key || 'N/A'}`;
+      ? `[RENEWAL REQUEST • ${planLabel}] ${customNote}`
+      : `Subscription renewal/extension request (${planLabel}) for store ${tenantRow.name}`;
 
     const storeName = String(tenantRow.name || tenantRow.slug).trim();
     const ownerEmail = String(ownerUser.email || cs.email || `admin@${tenantRow.slug}.com`).trim().toLowerCase();
@@ -472,8 +458,6 @@ router.get('/', async (req: Request, res: Response) => {
         id: 0,
         tenantId: 1,
         slug: '',
-        appKey: fallbackSub.appKey,
-        app_key: fallbackSub.appKey,
         subscriptionPlan: fallbackSub.subscriptionPlan,
         subscription_plan: fallbackSub.subscriptionPlan,
         subscriptionStartDate: fallbackSub.subscriptionStartDate,

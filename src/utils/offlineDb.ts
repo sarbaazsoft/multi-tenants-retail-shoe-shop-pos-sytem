@@ -1,4 +1,4 @@
-// IndexedDB + LocalStorage Persistent Queue & Store-Subdomain-Scoped Product Cache for Offline POS Billing
+// IndexedDB + LocalStorage Persistent Queue & Tenant-Scoped Product Cache for Offline POS Billing
 
 export interface QueuedSaleItem {
   productId: number;
@@ -31,6 +31,21 @@ export interface QueuedSale {
   notes: string;
   cashierName?: string;
   cashierId?: number;
+  authToken?: string;
+  isMinPriceOverridden?: boolean;
+  adminOverrideEmail?: string;
+  adminOverridePassword?: string;
+  exchange?: {
+    originalInvoiceNumber: string;
+    items: Array<{
+      saleItemId: number;
+      productId: number;
+      article?: string;
+      sku?: string;
+      returnQty: number;
+      unitRefundPrice: number;
+    }>;
+  } | null;
   status: 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED';
   errorMessage?: string;
   syncedInvoiceNumber?: string;
@@ -38,15 +53,157 @@ export interface QueuedSale {
 }
 
 const DB_NAME = 'ShoePosOfflineDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_SALES = 'offline_sales_queue';
 const STORE_CATALOG_LEGACY = 'cached_products';
 const STORE_CATALOG = 'cached_products_by_store';
 
 const RESERVED_SLUGS = new Set(['www', 'admin', 'superadmin', 'landing', 'root']);
 
+function decodeJwtPayload(token: string): any | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function parseValidTenantId(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === 'string' && /^[0-9]+$/.test(value.trim())) {
+    const num = Number(value.trim());
+    if (Number.isSafeInteger(num) && num > 0) {
+      return num;
+    }
+  }
+  return null;
+}
+
 /**
- * Resolves the active store from the explicit or saved selection for offline cache scoping.
+ * Resolves the current authenticated tenantId for offline product cache isolation.
+ * Never uses hostname, subdomain, domain, or URL-derived store identifiers.
+ */
+export function resolveActiveTenantId(explicitTenantId?: number | string | null): number | null {
+  const explicit = parseValidTenantId(explicitTenantId);
+
+  if (typeof localStorage !== 'undefined') {
+    const token =
+      localStorage.getItem('pos_auth_token') ||
+      localStorage.getItem('shoe_pos_jwt_token');
+    const payload = token ? decodeJwtPayload(token) : null;
+    const tokenRole = String(payload?.role || '').toUpperCase();
+    const tokenTenantId = parseValidTenantId(payload?.tenantId ?? payload?.tenant_id);
+
+    if (tokenRole && tokenRole !== 'SUPERADMIN' && tokenRole !== 'SUPER_ADMIN' && tokenTenantId) {
+      return explicit ?? tokenTenantId;
+    }
+
+    const userRaw =
+      localStorage.getItem('pos_current_user') ||
+      localStorage.getItem('shoe_pos_user');
+    if (userRaw) {
+      try {
+        const parsed = JSON.parse(userRaw);
+        const userRole = String(parsed?.originalRole || parsed?.role || '').toUpperCase();
+        const userTenantId = parseValidTenantId(parsed?.tenantId ?? parsed?.tenant_id);
+        if (userRole !== 'SUPERADMIN' && userRole !== 'SUPER_ADMIN' && userTenantId) {
+          return explicit ?? userTenantId;
+        }
+        if ((userRole === 'SUPERADMIN' || userRole === 'SUPER_ADMIN') && explicit) {
+          return explicit;
+        }
+      } catch {}
+    }
+
+    if (explicit) {
+      return explicit;
+    }
+
+    const selectedTenantId = parseValidTenantId(localStorage.getItem('shoe_pos_active_tenant_id'));
+    if (selectedTenantId) {
+      return selectedTenantId;
+    }
+  }
+
+  return explicit;
+}
+
+/**
+ * Verifies that the current authenticated store user is allowed to access/modify
+ * the offline product cache for the target tenantId. Prevents cross-tenant access.
+ */
+export function verifyOfflineTenantId(explicitTenantId?: number | string | null): number {
+  const activeTenantId = resolveActiveTenantId(explicitTenantId);
+
+  if (typeof localStorage !== 'undefined') {
+    const token =
+      localStorage.getItem('pos_auth_token') ||
+      localStorage.getItem('shoe_pos_jwt_token');
+    const payload = token ? decodeJwtPayload(token) : null;
+    const tokenRole = String(payload?.role || '').toUpperCase();
+    const tokenTenantId = parseValidTenantId(payload?.tenantId ?? payload?.tenant_id);
+
+    if (
+      tokenRole &&
+      tokenRole !== 'SUPERADMIN' &&
+      tokenRole !== 'SUPER_ADMIN' &&
+      tokenTenantId &&
+      activeTenantId &&
+      tokenTenantId !== activeTenantId
+    ) {
+      throw new Error(
+        `Cross-tenant offline cache access blocked: authenticated for tenant ${tokenTenantId}, cannot access tenant ${activeTenantId}.`
+      );
+    }
+
+    const userRaw =
+      localStorage.getItem('pos_current_user') ||
+      localStorage.getItem('shoe_pos_user');
+    if (userRaw) {
+      try {
+        const parsed = JSON.parse(userRaw);
+        const userRole = String(parsed?.originalRole || parsed?.role || '').toUpperCase();
+        const userTenantId = parseValidTenantId(parsed?.tenantId ?? parsed?.tenant_id);
+        if (
+          parsed &&
+          userRole !== 'SUPERADMIN' &&
+          userRole !== 'SUPER_ADMIN' &&
+          userTenantId &&
+          activeTenantId &&
+          userTenantId !== activeTenantId
+        ) {
+          throw new Error(
+            `Cross-tenant offline cache access blocked: authenticated for tenant ${userTenantId}, cannot access tenant ${activeTenantId}.`
+          );
+        }
+      } catch (err: any) {
+        if (err?.message?.includes('Cross-tenant offline cache access blocked')) {
+          throw err;
+        }
+      }
+    }
+  }
+
+  if (!activeTenantId) {
+    throw new Error('No active tenantId available for offline product cache.');
+  }
+
+  return activeTenantId;
+}
+
+/**
+ * Resolves the active store from the explicit or saved selection for offline sales queue.
  */
 export function resolveActiveStoreSubdomain(explicitSlug?: string | null): string {
   if (explicitSlug && typeof explicitSlug === 'string') {
@@ -68,7 +225,7 @@ export function resolveActiveStoreSubdomain(explicitSlug?: string | null): strin
 
 /**
  * Verifies that the current authenticated store user is allowed to access/modify
- * the offline cache for the target store subdomain. Prevents cross-store spoofing.
+ * the offline sales queue for the target store subdomain.
  */
 export function verifyOfflineStoreSubdomain(explicitSlug?: string | null): string {
   const activeSubdomain = resolveActiveStoreSubdomain(explicitSlug);
@@ -109,11 +266,23 @@ export function verifyOfflineStoreSubdomain(explicitSlug?: string | null): strin
 
 /**
  * Normalizes any product object from online catalog or API into a consistent
- * store-scoped POS product structure for offline billing.
+ * tenant-scoped POS product structure for offline billing using Product.tenantId.
  */
-export function normalizeCachedProduct(p: any, storeSubdomain: string): any {
+export function normalizeCachedProduct(p: any, tenantId: number): any {
   if (!p || p.id === undefined || p.id === null) return null;
-  const cleanSubdomain = (storeSubdomain || 'default').trim().toLowerCase();
+  const resolvedTenantId = parseValidTenantId(tenantId);
+  if (!resolvedTenantId) return null;
+
+  const rawProductTenantId = p.tenantId ?? p.tenant_id;
+  if (rawProductTenantId !== undefined && rawProductTenantId !== null) {
+    const productTenantId = parseValidTenantId(rawProductTenantId);
+    if (!productTenantId || productTenantId !== resolvedTenantId) {
+      return null;
+    }
+  }
+
+  const productId = Number(p.id);
+  if (!Number.isSafeInteger(productId) || productId <= 0) return null;
 
   const costPrice = Math.max(
     0,
@@ -142,11 +311,11 @@ export function normalizeCachedProduct(p: any, storeSubdomain: string): any {
   const barcode = String(p.barcode || p.sku || '').trim();
   const sku = String(p.sku || p.barcode || article || '').trim();
 
-  return {
+  const normalized = {
     ...p,
-    id: Number(p.id),
-    cacheKey: `${cleanSubdomain}:${Number(p.id)}`,
-    storeSubdomain: cleanSubdomain,
+    id: productId,
+    tenantId: resolvedTenantId,
+    cacheKey: `${resolvedTenantId}:${productId}`,
     article,
     name,
     sku,
@@ -179,30 +348,42 @@ export function normalizeCachedProduct(p: any, storeSubdomain: string): any {
     active: p.active !== false,
     cachedAt: new Date().toISOString(),
   };
+  delete normalized.storeSubdomain;
+  return normalized;
 }
 
-function getLocalStorageCatalogKey(storeSubdomain: string): string {
-  return `pos_offline_catalog:${storeSubdomain.toLowerCase()}`;
+function getLocalStorageCatalogKey(tenantId: number): string {
+  return `pos_offline_catalog_tenant:${tenantId}`;
 }
 
-function saveCatalogMirrorToLocalStorage(storeSubdomain: string, products: any[]): void {
+function saveCatalogMirrorToLocalStorage(tenantId: number, products: any[]): void {
   if (typeof localStorage === 'undefined') return;
+  const validTenantId = parseValidTenantId(tenantId);
+  if (!validTenantId) return;
   try {
-    const key = getLocalStorageCatalogKey(storeSubdomain);
+    const key = getLocalStorageCatalogKey(validTenantId);
     const existingRaw = localStorage.getItem(key);
     const existingMap = new Map<number, any>();
     if (existingRaw) {
       const parsed = JSON.parse(existingRaw);
       if (Array.isArray(parsed)) {
         for (const item of parsed) {
-          if (item && item.id !== undefined && item.storeSubdomain === storeSubdomain) {
+          if (
+            item &&
+            item.id !== undefined &&
+            parseValidTenantId(item.tenantId) === validTenantId
+          ) {
             existingMap.set(Number(item.id), item);
           }
         }
       }
     }
     for (const prod of products) {
-      if (prod && prod.id !== undefined) {
+      if (
+        prod &&
+        prod.id !== undefined &&
+        parseValidTenantId(prod.tenantId) === validTenantId
+      ) {
         existingMap.set(Number(prod.id), prod);
       }
     }
@@ -213,14 +394,21 @@ function saveCatalogMirrorToLocalStorage(storeSubdomain: string, products: any[]
   }
 }
 
-function readCatalogMirrorFromLocalStorage(storeSubdomain: string): any[] {
+function readCatalogMirrorFromLocalStorage(tenantId: number): any[] {
   if (typeof localStorage === 'undefined') return [];
+  const validTenantId = parseValidTenantId(tenantId);
+  if (!validTenantId) return [];
   try {
-    const raw = localStorage.getItem(getLocalStorageCatalogKey(storeSubdomain));
+    const raw = localStorage.getItem(getLocalStorageCatalogKey(validTenantId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((p) => p && (!p.storeSubdomain || p.storeSubdomain === storeSubdomain));
+    return parsed.filter(
+      (p) =>
+        p &&
+        parseValidTenantId(p.tenantId) === validTenantId &&
+        p.cacheKey === `${validTenantId}:${Number(p.id)}`
+    );
   } catch {
     return [];
   }
@@ -238,13 +426,17 @@ function openDB(): Promise<IDBDatabase> {
         salesStore.createIndex('createdAt', 'createdAt', { unique: false });
         salesStore.createIndex('storeSubdomain', 'storeSubdomain', { unique: false });
       }
-      if (!db.objectStoreNames.contains(STORE_CATALOG_LEGACY)) {
-        const legacyStore = db.createObjectStore(STORE_CATALOG_LEGACY, { keyPath: 'id' });
-        legacyStore.createIndex('barcode', 'barcode', { unique: false });
+      // Remove legacy unscoped product store if present
+      if (db.objectStoreNames.contains(STORE_CATALOG_LEGACY)) {
+        db.deleteObjectStore(STORE_CATALOG_LEGACY);
+      }
+      // On upgrade to v3 (tenantId-scoped product cache), recreate STORE_CATALOG to purge legacy subdomain-isolated entries
+      if (event.oldVersion < 3 && db.objectStoreNames.contains(STORE_CATALOG)) {
+        db.deleteObjectStore(STORE_CATALOG);
       }
       if (!db.objectStoreNames.contains(STORE_CATALOG)) {
         const catalogStore = db.createObjectStore(STORE_CATALOG, { keyPath: 'cacheKey' });
-        catalogStore.createIndex('storeSubdomain', 'storeSubdomain', { unique: false });
+        catalogStore.createIndex('tenantId', 'tenantId', { unique: false });
         catalogStore.createIndex('barcode', 'barcode', { unique: false });
         catalogStore.createIndex('sku', 'sku', { unique: false });
       }
@@ -256,13 +448,15 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 /**
- * Save an offline sale to IndexedDB (strictly tagged with the store's subdomain)
+ * Save an offline sale to IndexedDB
  */
 export async function queueOfflineSale(sale: QueuedSale, explicitStoreSubdomain?: string | null): Promise<void> {
   const storeSubdomain = verifyOfflineStoreSubdomain(sale.storeSubdomain || explicitStoreSubdomain);
+  const resolvedTenantId = resolveActiveTenantId(sale.tenantId);
   const scopedSale: QueuedSale = {
     ...sale,
     storeSubdomain,
+    ...(resolvedTenantId ? { tenantId: resolvedTenantId } : {}),
   };
   const db = await openDB();
   await new Promise<void>((resolve, reject) => {
@@ -274,9 +468,9 @@ export async function queueOfflineSale(sale: QueuedSale, explicitStoreSubdomain?
     req.onerror = () => reject(req.error);
   });
 
-  // Also deduct local cached stock for this store so subsequent offline bills have accurate stock
-  if (Array.isArray(sale.items) && sale.items.length > 0) {
-    await deductCachedProductStockOffline(sale.items, storeSubdomain).catch(() => {});
+  // Also deduct local cached stock for this tenant so subsequent offline bills have accurate stock
+  if (Array.isArray(sale.items) && sale.items.length > 0 && resolvedTenantId) {
+    await deductCachedProductStockOffline(sale.items, resolvedTenantId).catch(() => {});
   }
 }
 
@@ -290,6 +484,7 @@ export async function getOfflineSales(explicitStoreSubdomain?: string | null): P
   } catch {
     return [];
   }
+  const activeTenantId = resolveActiveTenantId();
 
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -299,9 +494,12 @@ export async function getOfflineSales(explicitStoreSubdomain?: string | null): P
 
     req.onsuccess = () => {
       const allResults = (req.result as QueuedSale[]) || [];
-      const results = allResults.filter(
-        (s) => !s.storeSubdomain || s.storeSubdomain === storeSubdomain
-      );
+      const results = allResults.filter((s) => {
+        if (activeTenantId && s.tenantId) {
+          return Number(s.tenantId) === activeTenantId;
+        }
+        return !s.storeSubdomain || s.storeSubdomain === storeSubdomain;
+      });
       results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       resolve(results);
     };
@@ -366,32 +564,35 @@ export async function deleteOfflineSale(clientTxId: string): Promise<void> {
 }
 
 /**
- * Cache products list into store-subdomain-scoped IndexedDB & LocalStorage mirror
+ * Cache products list into tenantId-scoped IndexedDB & LocalStorage mirror
  * for offline product search, catalog browsing, and barcode/article billing.
  */
 export async function cacheCatalogOffline(
   products: any[],
-  explicitStoreSubdomain?: string | null
+  explicitTenantId?: number | string | null
 ): Promise<void> {
   if (!Array.isArray(products) || products.length === 0) return;
 
-  let storeSubdomain = 'default';
+  let tenantId: number;
   try {
-    storeSubdomain = verifyOfflineStoreSubdomain(explicitStoreSubdomain);
+    const candidateTenantId =
+      parseValidTenantId(explicitTenantId) ??
+      parseValidTenantId(products[0]?.tenantId ?? products[0]?.tenant_id);
+    tenantId = verifyOfflineTenantId(candidateTenantId);
   } catch {
     return;
   }
 
   const normalizedList = products
-    .map((p) => normalizeCachedProduct(p, storeSubdomain))
+    .map((p) => normalizeCachedProduct(p, tenantId))
     .filter(Boolean);
 
   if (normalizedList.length === 0) return;
 
-  // 1. Instant synchronous mirror in store-scoped localStorage
-  saveCatalogMirrorToLocalStorage(storeSubdomain, normalizedList);
+  // 1. Instant synchronous mirror in tenant-scoped localStorage
+  saveCatalogMirrorToLocalStorage(tenantId, normalizedList);
 
-  // 2. Persistent store-scoped IndexedDB write
+  // 2. Persistent tenant-scoped IndexedDB write
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -409,16 +610,16 @@ export async function cacheCatalogOffline(
 }
 
 /**
- * Deduct stock locally in the store-scoped offline catalog cache when an offline bill is created
+ * Deduct stock locally in the tenant-scoped offline catalog cache when an offline bill is created
  */
 export async function deductCachedProductStockOffline(
   items: Array<{ productId: number; quantity: number }>,
-  explicitStoreSubdomain?: string | null
+  explicitTenantId?: number | string | null
 ): Promise<void> {
   if (!Array.isArray(items) || items.length === 0) return;
-  let storeSubdomain = 'default';
+  let tenantId: number;
   try {
-    storeSubdomain = verifyOfflineStoreSubdomain(explicitStoreSubdomain);
+    tenantId = verifyOfflineTenantId(explicitTenantId);
   } catch {
     return;
   }
@@ -433,21 +634,24 @@ export async function deductCachedProductStockOffline(
   }
   if (qtyByProduct.size === 0) return;
 
-  const currentMirror = readCatalogMirrorFromLocalStorage(storeSubdomain);
+  const currentMirror = readCatalogMirrorFromLocalStorage(tenantId);
   const updatedItems: any[] = [];
   for (const prod of currentMirror) {
+    if (parseValidTenantId(prod.tenantId) !== tenantId) continue;
     const deduct = qtyByProduct.get(Number(prod.id));
     if (deduct) {
       const newStock = Math.max(0, (Number(prod.totalStock ?? prod.total_stock ?? 0) || 0) - deduct);
       updatedItems.push({
         ...prod,
+        tenantId,
+        cacheKey: `${tenantId}:${Number(prod.id)}`,
         totalStock: newStock,
         total_stock: newStock,
       });
     }
   }
   if (updatedItems.length > 0) {
-    saveCatalogMirrorToLocalStorage(storeSubdomain, updatedItems);
+    saveCatalogMirrorToLocalStorage(tenantId, updatedItems);
   }
 
   try {
@@ -456,11 +660,11 @@ export async function deductCachedProductStockOffline(
       const tx = db.transaction(STORE_CATALOG, 'readwrite');
       const store = tx.objectStore(STORE_CATALOG);
       for (const [pid, deduct] of qtyByProduct.entries()) {
-        const cacheKey = `${storeSubdomain}:${pid}`;
+        const cacheKey = `${tenantId}:${pid}`;
         const getReq = store.get(cacheKey);
         getReq.onsuccess = () => {
           const existing = getReq.result;
-          if (existing && existing.storeSubdomain === storeSubdomain) {
+          if (existing && parseValidTenantId(existing.tenantId) === tenantId) {
             const newStock = Math.max(0, (Number(existing.totalStock ?? existing.total_stock ?? 0) || 0) - deduct);
             existing.totalStock = newStock;
             existing.total_stock = newStock;
@@ -477,42 +681,137 @@ export async function deductCachedProductStockOffline(
 }
 
 /**
- * Retrieve all cached catalog products strictly belonging to the active store subdomain
+ * Delete a single cached product strictly within the active tenant's offline catalog cache
+ */
+export async function deleteCachedProductOffline(
+  productId: number,
+  explicitTenantId?: number | string | null
+): Promise<void> {
+  const pid = Number(productId);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return;
+
+  let tenantId: number;
+  try {
+    tenantId = verifyOfflineTenantId(explicitTenantId);
+  } catch {
+    return;
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const key = getLocalStorageCatalogKey(tenantId);
+      const existing = readCatalogMirrorFromLocalStorage(tenantId);
+      const filtered = existing.filter(
+        (p) => parseValidTenantId(p.tenantId) === tenantId && Number(p.id) !== pid
+      );
+      localStorage.setItem(key, JSON.stringify(filtered));
+    } catch {}
+  }
+
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_CATALOG, 'readwrite');
+      const store = tx.objectStore(STORE_CATALOG);
+      const cacheKey = `${tenantId}:${pid}`;
+      const getReq = store.get(cacheKey);
+      getReq.onsuccess = () => {
+        const existing = getReq.result;
+        if (existing && parseValidTenantId(existing.tenantId) === tenantId) {
+          store.delete(cacheKey);
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {}
+}
+
+/**
+ * Clear all cached products strictly for the specified/active tenantId
+ */
+export async function clearCachedProductsOffline(
+  explicitTenantId?: number | string | null
+): Promise<void> {
+  let tenantId: number;
+  try {
+    tenantId = verifyOfflineTenantId(explicitTenantId);
+  } catch {
+    return;
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem(getLocalStorageCatalogKey(tenantId));
+    } catch {}
+  }
+
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_CATALOG, 'readwrite');
+      const store = tx.objectStore(STORE_CATALOG);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const all = (req.result as any[]) || [];
+        for (const item of all) {
+          if (item && parseValidTenantId(item.tenantId) === tenantId && item.cacheKey) {
+            store.delete(item.cacheKey);
+          }
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {}
+}
+
+/**
+ * Retrieve all cached catalog products strictly belonging to the active tenantId
  */
 export async function getAllCachedProductsOffline(
-  explicitStoreSubdomain?: string | null
+  explicitTenantId?: number | string | null
 ): Promise<any[]> {
-  let storeSubdomain = 'default';
+  let tenantId: number;
   try {
-    storeSubdomain = verifyOfflineStoreSubdomain(explicitStoreSubdomain);
+    tenantId = verifyOfflineTenantId(explicitTenantId);
   } catch {
     return [];
   }
 
   const byId = new Map<number, any>();
 
-  // 1. Load fast localStorage mirror for this store
-  for (const item of readCatalogMirrorFromLocalStorage(storeSubdomain)) {
-    const norm = normalizeCachedProduct(item, storeSubdomain);
+  // 1. Load fast localStorage mirror for this tenantId
+  for (const item of readCatalogMirrorFromLocalStorage(tenantId)) {
+    const norm = normalizeCachedProduct(item, tenantId);
     if (norm) byId.set(norm.id, norm);
   }
 
-  // 2. Load IndexedDB store-scoped catalog
+  // 2. Load IndexedDB tenant-scoped catalog
   try {
     const db = await openDB();
     const idbItems = await new Promise<any[]>((resolve) => {
       const tx = db.transaction(STORE_CATALOG, 'readonly');
       const store = tx.objectStore(STORE_CATALOG);
-      const req = store.getAll();
+      const req = store.indexNames.contains('tenantId')
+        ? store.index('tenantId').getAll(IDBKeyRange.only(tenantId))
+        : store.getAll();
       req.onsuccess = () => {
         const all = (req.result as any[]) || [];
-        resolve(all.filter((p) => p && p.storeSubdomain === storeSubdomain));
+        resolve(
+          all.filter(
+            (p) =>
+              p &&
+              parseValidTenantId(p.tenantId) === tenantId &&
+              p.cacheKey === `${tenantId}:${Number(p.id)}`
+          )
+        );
       };
       req.onerror = () => resolve([]);
     });
 
     for (const item of idbItems) {
-      const norm = normalizeCachedProduct(item, storeSubdomain);
+      const norm = normalizeCachedProduct(item, tenantId);
       if (norm) byId.set(norm.id, norm);
     }
   } catch {
@@ -523,16 +822,16 @@ export async function getAllCachedProductsOffline(
 }
 
 /**
- * Lookup a cached product by barcode, SKU, or article name in the store's offline catalog
+ * Lookup a cached product by barcode, SKU, or article name in the tenant's offline catalog
  */
 export async function lookupCachedProductOffline(
   barcodeOrArticle: string,
-  explicitStoreSubdomain?: string | null
+  explicitTenantId?: number | string | null
 ): Promise<any | null> {
   const clean = String(barcodeOrArticle || '').trim().toLowerCase();
   if (!clean) return null;
 
-  const allStoreProducts = await getAllCachedProductsOffline(explicitStoreSubdomain);
+  const allStoreProducts = await getAllCachedProductsOffline(explicitTenantId);
   if (allStoreProducts.length === 0) return null;
 
   // 1. Exact match on barcode, SKU, article, or product name
@@ -558,14 +857,14 @@ export async function lookupCachedProductOffline(
 }
 
 /**
- * Search cached products in IndexedDB/LocalStorage when offline (strictly scoped by store subdomain)
+ * Search cached products in IndexedDB/LocalStorage when offline (strictly scoped by tenantId)
  */
 export async function searchCachedProductsOffline(
   query: string,
-  explicitStoreSubdomain?: string | null,
+  explicitTenantId?: number | string | null,
   limit = 50
 ): Promise<any[]> {
-  const all = await getAllCachedProductsOffline(explicitStoreSubdomain);
+  const all = await getAllCachedProductsOffline(explicitTenantId);
   const q = String(query || '').toLowerCase().trim();
   if (!q) {
     return all.slice(0, limit);

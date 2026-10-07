@@ -23,7 +23,6 @@ export interface TenantInfo {
   slug: string;
   name: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
-  appKey?: string;
   subscriptionPlan?: SubscriptionPlan;
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
@@ -44,7 +43,6 @@ export interface SuperAdminStoreRow {
   slug: string;
   name: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
-  appKey: string;
   subscriptionPlan: SubscriptionPlan;
   subscriptionStartDate: string;
   subscriptionEndDate: string;
@@ -68,6 +66,8 @@ export interface SuperAdminStoreRow {
   supplierCount?: number;
   unitsSold?: number;
   inventoryValue?: number;
+  isOnline?: boolean;
+  lastSeenAt?: string | null;
   manifestUrl: string;
   appUrl: string;
   installUrl: string;
@@ -139,7 +139,6 @@ export interface CompanySettings {
   tenantId?: number;
   slug?: string;
   tenantStatus?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
-  appKey?: string;
   subscriptionPlan?: SubscriptionPlan;
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
@@ -235,6 +234,7 @@ export interface AiProductSuggestionResult {
 
 export interface Product {
   id: number;
+  tenantId?: number;
   article: string;
   name?: string;
   brand: string;

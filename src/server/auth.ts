@@ -1,7 +1,14 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { pgClient } from '../db/index.ts';
-import { ensureSaasControlPlane } from '../db/schemaInit.ts';
+import {
+  ensureSaasControlPlane,
+  resetSaasControlPlaneState,
+} from '../db/schemaInit.ts';
+import {
+  recordTenantMiddlewarePresence,
+  removeTenantMiddlewarePresence,
+} from './middleware/tenantMiddleware.ts';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'shoe-pos-super-secure-jwt-secret-key-2026';
 
@@ -113,6 +120,19 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   }
 
   try {
+    // Check if the users relation exists before running auth queries (handles clean-wipe / installation state gracefully)
+    const tableCheck = await pgClient
+      .query<{ exists: boolean }>(`SELECT to_regclass('public.users') IS NOT NULL AS exists`)
+      .catch(() => ({ rows: [{ exists: false }] }));
+
+    if (!tableCheck.rows[0]?.exists) {
+      resetSaasControlPlaneState();
+      return res.status(401).json({
+        code: 'INSTALLATION_REQUIRED',
+        error: 'Database schema is not initialized yet. Please complete the installation wizard.',
+      });
+    }
+
     await ensureSaasControlPlane();
 
     const expectedJwtTenantId = Number(decoded.tenantId) > 0 ? Number(decoded.tenantId) : 1;
@@ -215,6 +235,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
                 fullPath.includes('/api/saas') ||
                 fullPath.includes('/api/install/status'));
             if (!isAllowedExpiredAdminRoute) {
+              removeTenantMiddlewarePresence(tRow.id);
               return res.status(403).json({
                 error: 'Your subscription key has expired. Please contact support to renew.',
                 code: 'SUBSCRIPTION_EXPIRED',
@@ -227,14 +248,23 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
             String(tRow.status).toUpperCase() === 'SUSPENDED' ||
             String(tRow.subscription_status || '').toUpperCase() === 'SUSPENDED'
           ) {
+            removeTenantMiddlewarePresence(tRow.id);
             return res.status(423).json({
               error: `Store Suspended: Access to "${tRow.name}" has been suspended by platform administration.`,
               code: 'TENANT_SUSPENDED',
               tenantSlug: tRow.slug,
             });
           }
+
+          recordTenantMiddlewarePresence(tRow.id, req.originalUrl || req.path || '/api');
         }
       } catch (_) {}
+    } else if (
+      Number.isInteger(activeRouteTid) &&
+      activeRouteTid > 0 &&
+      !String(req.originalUrl || req.path || '').startsWith('/api/superadmin')
+    ) {
+      recordTenantMiddlewarePresence(activeRouteTid, req.originalUrl || req.path || '/api');
     }
 
     req.user = {
@@ -252,7 +282,15 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
 
     next();
   } catch (dbErr: any) {
-    console.error('requireAuth database error:', dbErr?.message || dbErr);
+    const errMsg = String(dbErr?.message || dbErr || '');
+    if (dbErr?.code === '42P01' || errMsg.includes('relation "users" does not exist') || errMsg.includes('does not exist')) {
+      resetSaasControlPlaneState();
+      return res.status(401).json({
+        code: 'INSTALLATION_REQUIRED',
+        error: 'Database was reset or is not yet initialized. Please complete setup or login again.',
+      });
+    }
+    console.error('requireAuth database error:', errMsg);
     return res.status(503).json({ error: 'Database service temporarily unavailable. Please retry.' });
   }
 }

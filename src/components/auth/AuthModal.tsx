@@ -50,11 +50,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [rememberMe, setRememberMe] = useState(true);
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [dispatchedResetLink, setDispatchedResetLink] = useState<string | null>(null);
+  const [emailPreviewUrl, setEmailPreviewUrl] = useState<string | null>(null);
+  const [copiedResetLink, setCopiedResetLink] = useState(false);
+  const [copiedResetToken, setCopiedResetToken] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [matchingStores, setMatchingStores] = useState<Array<{ tenantId: number; slug: string; name: string }>>([]);
+  const [forgotEmailTouched, setForgotEmailTouched] = useState(false);
+
+  const trimmedEmail = email.trim();
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmedEmail);
+  const showForgotEmailError =
+    (forgotEmailTouched || trimmedEmail.length > 0) && trimmedEmail.length > 0 && !isEmailValid;
 
   const rawTenantId = Number(
     companySettings?.tenant_id ?? companySettings?.tenantId ?? companySettings?.id ?? 0
@@ -72,10 +82,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }, []);
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const urlResetToken = searchParams.get('resetToken') || '';
+    const urlEmail = searchParams.get('email') || '';
+
+    if (urlResetToken) {
+      setResetToken(urlResetToken);
+      if (urlEmail) setEmail(urlEmail);
+      setTab('reset');
+      setErrorMessage(null);
+      setInfoMessage('Reset link verified. Enter a new password below to complete your password reset.');
+      api.auth
+        .verifyResetToken(urlResetToken)
+        .then((res) => {
+          if (res?.valid && res.email) {
+            setEmail(res.email);
+          }
+        })
+        .catch((err) => {
+          setErrorMessage(err?.message || 'This password reset link is invalid or has expired.');
+        });
+      return;
+    }
+
     setEmail('');
     setPassword('');
     setErrorMessage(null);
     setInfoMessage(null);
+    setDispatchedResetLink(null);
+    setEmailPreviewUrl(null);
     setMatchingStores([]);
   }, [activeTenantId]);
 
@@ -130,25 +165,55 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleForgot = async (e: React.FormEvent) => {
     e.preventDefault();
+    setForgotEmailTouched(true);
+    if (!isEmailValid) {
+      setErrorMessage('Please enter a valid email address before sending a password reset request.');
+      return;
+    }
     setIsLoading(true);
     setErrorMessage(null);
     setInfoMessage(null);
+    setDispatchedResetLink(null);
+    setEmailPreviewUrl(null);
     try {
-      const res = await api.auth.forgotPassword({
-        email: email.trim(),
+      const res = await api.auth.sendResetLink({
+        email: trimmedEmail,
         tenantId: activeTenantId,
+        origin: window.location.origin,
       });
-      setResetToken('');
+      if (res.resetLink) {
+        setDispatchedResetLink(res.resetLink);
+      }
+      if (res.resetToken) {
+        setResetToken(res.resetToken);
+      }
+      if (res.emailPreviewUrl) {
+        setEmailPreviewUrl(res.emailPreviewUrl);
+      }
       setInfoMessage(
         res.message ||
-          'If the email exists in this store, a password reset verification token has been issued. Please enter your verification token below.'
+          `Password reset token and link have been sent by email to ${trimmedEmail}.`
       );
-      setTab('reset');
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to request reset token.');
+      setErrorMessage(err.message || 'Failed to send password reset email.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleOpenResetLink = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (dispatchedResetLink) {
+      try {
+        const parsed = new URL(dispatchedResetLink, window.location.origin);
+        const tokenFromLink = parsed.searchParams.get('resetToken') || resetToken;
+        if (tokenFromLink) setResetToken(tokenFromLink);
+        window.history.replaceState({}, '', `${parsed.pathname}${parsed.search}`);
+      } catch {}
+    }
+    setErrorMessage(null);
+    setInfoMessage('Reset link opened. Enter your new password below.');
+    setTab('reset');
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -163,10 +228,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         newPassword,
         tenantId: activeTenantId,
       });
-      setInfoMessage('Password has been reset successfully! You can now log in.');
+      setInfoMessage('Password has been reset successfully! You can now log in with your new password.');
       setResetToken('');
       setNewPassword('');
       setPassword('');
+      setDispatchedResetLink(null);
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.has('resetToken')) {
+        searchParams.delete('resetToken');
+        searchParams.delete('email');
+        const nextQuery = searchParams.toString();
+        window.history.replaceState({}, '', `/${nextQuery ? `?${nextQuery}` : ''}`);
+      }
       setTab('login');
     } catch (err: any) {
       setErrorMessage(err.message || 'Password reset failed.');
@@ -177,7 +250,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   return (
     <div className="min-h-screen w-full flex flex-col justify-between relative overflow-x-hidden bg-slate-900 dark:bg-[#0A0E1A] text-slate-900 dark:text-slate-100 font-sans selection:bg-purple-600 selection:text-white transition-colors duration-200">
-      {/* Showroom Background Image Layer (80% visible / opacity-80) */}
+      {/* Showroom Background Image Layer (20% opacity / opacity-20 as cover) */}
       <ShowroomBackground />
 
       {/* Top Application Bar with backdrop blur */}
@@ -258,34 +331,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   )}
                 </button>
 
-                {!onBack && (
-                  <button
-                    id="auth-tab-forgot"
-                    type="button"
-                    data-active={tab === 'forgot' || tab === 'reset'}
-                    data-tab="forgot"
-                    onClick={() => {
-                      setTab('forgot');
-                      setErrorMessage(null);
-                      setInfoMessage(null);
-                    }}
-                    className={`tab-underline-link relative flex-1 py-3 text-xs sm:text-sm font-semibold transition-colors duration-300 flex items-center justify-center space-x-1.5 whitespace-nowrap cursor-pointer shrink-0 ${
-                      tab === 'forgot' || tab === 'reset'
-                        ? 'active text-purple-600 dark:text-purple-400 font-bold'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-300'
-                    }`}
-                  >
-                    <KeyRound className={`w-4 h-4 transition-colors duration-200 ${tab === 'forgot' || tab === 'reset' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`} />
-                    <span>Reset PIN</span>
-                    {(tab === 'forgot' || tab === 'reset') && (
-                      <motion.div
-                        layoutId="authActiveUnderline"
-                        className="absolute bottom-0 left-0 right-0 h-[3px] rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 shadow-[0_2px_8px_rgba(147,51,234,0.45)] pointer-events-none z-10"
-                        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      />
-                    )}
-                  </button>
-                )}
+                <button
+                  id="auth-tab-forgot"
+                  type="button"
+                  data-active={tab === 'forgot' || tab === 'reset'}
+                  data-tab="forgot"
+                  onClick={() => {
+                    setTab('forgot');
+                    setErrorMessage(null);
+                    setInfoMessage(null);
+                  }}
+                  className={`tab-underline-link relative flex-1 py-3 text-xs sm:text-sm font-semibold transition-colors duration-300 flex items-center justify-center space-x-1.5 whitespace-nowrap cursor-pointer shrink-0 ${
+                    tab === 'forgot' || tab === 'reset'
+                      ? 'active text-purple-600 dark:text-purple-400 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-300'
+                  }`}
+                >
+                  <KeyRound className={`w-4 h-4 transition-colors duration-200 ${tab === 'forgot' || tab === 'reset' ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                  <span>Forgot Password</span>
+                  {(tab === 'forgot' || tab === 'reset') && (
+                    <motion.div
+                      layoutId="authActiveUnderline"
+                      className="absolute bottom-0 left-0 right-0 h-[3px] rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 shadow-[0_2px_8px_rgba(147,51,234,0.45)] pointer-events-none z-10"
+                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                    />
+                  )}
+                </button>
 
                 {/* Scroll End Buffer Spacer: Ensures the last tab is 100% visible and never clipped */}
                 <div className="tab-end-spacer shrink-0 w-6 sm:w-8 h-1 pointer-events-none self-stretch" aria-hidden="true" role="presentation" />
@@ -295,12 +366,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="mb-4">
                 <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
                   {tab === 'login' && 'Sign in to Terminal'}
-                  {tab === 'forgot' && 'Reset Terminal PIN / Password'}
+                  {tab === 'forgot' && 'Forgot Password — Send Reset Link'}
                   {tab === 'reset' && 'Create New Password'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-purple-200/70 mt-0.5">
                   {tab === 'login' && 'Enter your authorized email and password to access POS operations.'}
-                  {tab === 'forgot' && 'Provide your registered email to receive an instant recovery code.'}
+                  {tab === 'forgot' && 'Enter your registered email address to receive a password reset link.'}
                   {tab === 'reset' && 'Enter your reset verification token and choose a new password.'}
                 </p>
               </div>
@@ -372,16 +443,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                         Counter PIN / Password
                       </label>
-                      {!onBack && <button
+                      <button
+                        id="forgot-password-link"
                         type="button"
                         onClick={() => {
                           setTab('forgot');
                           setErrorMessage(null);
+                          setInfoMessage(null);
                         }}
-                        className="text-xs font-semibold text-purple-600 hover:text-purple-800 dark:text-purple-300 dark:hover:text-purple-200 transition cursor-pointer"
+                        className="text-xs font-semibold text-purple-600 hover:text-purple-800 dark:text-purple-300 dark:hover:text-purple-200 hover:underline transition cursor-pointer"
                       >
                         Forgot Password?
-                      </button>}
+                      </button>
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-purple-600 dark:text-purple-400">
@@ -448,13 +521,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {/* TAB 2: FORGOT PASSWORD FORM */}
               {tab === 'forgot' && (
-                <form onSubmit={handleForgot} className="space-y-4">
+                <form onSubmit={handleForgot} noValidate className="space-y-4">
                   <p className="text-xs text-slate-500 dark:text-purple-200/70 leading-relaxed font-medium">
-                    Enter the email address registered with your terminal account. A one-time verification token will be generated to reset your credentials.
+                    Enter the email address registered with your store or SuperAdmin account. We will send a password reset link to your email.
                   </p>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    <label
+                      htmlFor="forgot-email-input"
+                      className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5"
+                    >
                       Account Email Address
                     </label>
                     <div className="relative">
@@ -462,15 +538,128 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <Mail className="w-4 h-4" />
                       </div>
                       <input
+                        id="forgot-email-input"
                         type="email"
                         required
+                        aria-invalid={showForgotEmailError}
+                        aria-describedby="forgot-email-validation-msg"
                         placeholder="admin@shoepos.com"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="app-input w-full bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-purple-800/60 focus:bg-white dark:focus:bg-slate-900 focus:border-purple-600 dark:focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20 dark:focus:ring-purple-500/20 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-400 rounded-xl text-xs sm:text-sm font-medium py-2.5 pl-[2.125rem] pr-4 transition outline-none"
+                        onBlur={() => setForgotEmailTouched(true)}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                        className={`app-input w-full bg-slate-50 dark:bg-slate-900/80 border focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-400 rounded-xl text-xs sm:text-sm font-medium py-2.5 pl-[2.125rem] pr-9 transition outline-none ${
+                          showForgotEmailError
+                            ? 'border-rose-400 dark:border-rose-500/80 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20'
+                            : isEmailValid
+                            ? 'border-emerald-400 dark:border-emerald-500/70 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
+                            : 'border-slate-200 dark:border-purple-800/60 focus:border-purple-600 dark:focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20 dark:focus:ring-purple-500/20'
+                        }`}
                       />
+                      {trimmedEmail.length > 0 && (
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          {isEmailValid ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-rose-500" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div id="forgot-email-validation-msg" className="mt-1.5 min-h-[18px]">
+                      {showForgotEmailError ? (
+                        <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Enter a valid email address format (e.g., admin@shoepos.com).</span>
+                        </p>
+                      ) : isEmailValid ? (
+                        <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>Email format verified — ready to send request.</span>
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 dark:text-purple-300/60">
+                          A valid email format is required to enable Send Request.
+                        </p>
+                      )}
                     </div>
                   </div>
+
+                  {dispatchedResetLink && (
+                    <div className="p-3.5 rounded-xl bg-purple-50/90 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800/80 space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-purple-900 dark:text-purple-200">
+                          Email Dispatched with Token &amp; Link
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(dispatchedResetLink).catch(() => {});
+                            setCopiedResetLink(true);
+                            setTimeout(() => setCopiedResetLink(false), 2000);
+                          }}
+                          className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-700 text-[10px] font-bold text-purple-700 dark:text-purple-300 hover:bg-purple-100 cursor-pointer"
+                        >
+                          {copiedResetLink ? 'Copied Link!' : 'Copy Link'}
+                        </button>
+                      </div>
+
+                      {resetToken && (
+                        <div className="p-2 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-purple-200/70 dark:border-purple-800/60 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-purple-300/70">
+                              Email Reset Token
+                            </div>
+                            <div className="font-mono font-bold text-[11px] text-purple-700 dark:text-purple-200 truncate">
+                              {resetToken}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(resetToken).catch(() => {});
+                              setCopiedResetToken(true);
+                              setTimeout(() => setCopiedResetToken(false), 2000);
+                            }}
+                            className="px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-200 text-[10px] font-bold shrink-0 cursor-pointer"
+                          >
+                            {copiedResetToken ? 'Copied!' : 'Copy Token'}
+                          </button>
+                        </div>
+                      )}
+
+                      <a
+                        href={dispatchedResetLink}
+                        onClick={handleOpenResetLink}
+                        className="block p-2 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-purple-200/70 dark:border-purple-800/60 font-mono text-[11px] text-purple-700 dark:text-purple-300 hover:underline break-all"
+                      >
+                        {dispatchedResetLink}
+                      </a>
+
+                      {emailPreviewUrl && (
+                        <a
+                          href={emailPreviewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                          <span>View Sent Email in Webmail Inbox</span>
+                        </a>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleOpenResetLink}
+                        className="w-full py-2 px-3 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>Open Reset Link &amp; Choose New Password</span>
+                      </button>
+                    </div>
+                  )}
 
                   <div className="flex gap-3 pt-2">
                     <button
@@ -484,11 +673,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       Back to Sign In
                     </button>
                     <button
+                      id="send-reset-link-btn"
                       type="submit"
-                      disabled={isLoading}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 dark:from-purple-600 dark:to-indigo-600 dark:hover:from-purple-500 dark:hover:to-indigo-500 text-white border border-purple-400/40 dark:border-purple-400/50 shadow-md shadow-purple-600/25 dark:shadow-[0_0_14px_rgba(147,51,234,0.3)] font-bold text-xs transition active:scale-[0.99] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                      disabled={isLoading || !isEmailValid}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 dark:from-purple-600 dark:to-indigo-600 dark:hover:from-purple-500 dark:hover:to-indigo-500 text-white border border-purple-400/40 dark:border-purple-400/50 shadow-md shadow-purple-600/25 dark:shadow-[0_0_14px_rgba(147,51,234,0.3)] font-bold text-xs transition active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-1.5"
                     >
-                      {isLoading ? 'Requesting Token...' : 'Generate Reset Token'}
+                      {isLoading ? 'Sending Request...' : 'Send Request'}
                     </button>
                   </div>
                 </form>
