@@ -289,12 +289,18 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">My Account &amp; Profile</h3>
                 <span
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                    currentUser?.role === 'ADMIN'
+                    currentUser?.role === 'SUPERADMIN'
+                      ? 'bg-purple-600/20 text-purple-700 dark:text-purple-300 border border-purple-500/40 dark:border-purple-400/50'
+                      : currentUser?.role === 'ADMIN'
                       ? 'bg-blue-500/15 text-blue-700 dark:text-purple-200 border border-blue-500/30 dark:border-purple-400/40 dark:bg-purple-500/20'
                       : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
                   }`}
                 >
-                  {currentUser?.role === 'ADMIN' ? 'Store Owner' : 'Salesperson'}
+                  {currentUser?.role === 'SUPERADMIN'
+                    ? 'SuperAdmin'
+                    : currentUser?.role === 'ADMIN'
+                    ? 'Store Owner'
+                    : 'Salesperson'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-purple-200/80 mt-0.5">

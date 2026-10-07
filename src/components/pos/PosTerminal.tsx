@@ -1339,8 +1339,16 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                             </div>
                           )}
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                          Article: {prod.article || prod.name} | Barcode: {prod.barcode}
+                        <p className="text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 flex-wrap">
+                          <span>Article: {prod.article || prod.name}</span>
+                          {prod.sku ? (
+                            <>
+                              <span className="opacity-40">|</span>
+                              <span className="text-purple-600 dark:text-purple-300 font-bold">SKU: {prod.sku}</span>
+                            </>
+                          ) : null}
+                          <span className="opacity-40">|</span>
+                          <span>Barcode: {prod.barcode}</span>
                         </p>
                       </div>
                     </div>
@@ -1596,8 +1604,16 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                             {isItemFixed ? 'Fixed' : 'Negotiable'}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                          Article: <strong className="text-slate-700 dark:text-slate-300 font-semibold">{item.article || item.name}</strong> | Barcode: <strong className="text-slate-700 dark:text-slate-300 font-semibold">{item.barcode}</strong>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 flex-wrap">
+                          <span>Article: <strong className="text-slate-700 dark:text-slate-300 font-semibold">{item.article || item.name}</strong></span>
+                          {item.sku ? (
+                            <>
+                              <span className="opacity-40">|</span>
+                              <span>SKU: <strong className="text-purple-600 dark:text-purple-300 font-semibold">{item.sku}</strong></span>
+                            </>
+                          ) : null}
+                          <span className="opacity-40">|</span>
+                          <span>Barcode: <strong className="text-slate-700 dark:text-slate-300 font-semibold">{item.barcode}</strong></span>
                         </div>
 
                         {/* Visual Warning: Price below configured minimum profit margin */}

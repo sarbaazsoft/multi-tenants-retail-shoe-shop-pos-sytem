@@ -123,9 +123,11 @@ const mockStore: Record<string, any[]> = {
     },
   ],
   categories: [
-    { id: 1, tenant_id: 1, name: 'Casual Shoes', created_at: new Date().toISOString() },
-    { id: 2, tenant_id: 1, name: 'Formal Dress Shoes', created_at: new Date().toISOString() },
-    { id: 3, tenant_id: 1, name: 'Sandals & Chappals', created_at: new Date().toISOString() },
+    { id: 1, name: 'Men', created_at: new Date().toISOString() },
+    { id: 2, name: 'Women', created_at: new Date().toISOString() },
+    { id: 3, name: 'Kids', created_at: new Date().toISOString() },
+    { id: 4, name: 'Toddler', created_at: new Date().toISOString() },
+    { id: 5, name: 'Infant', created_at: new Date().toISOString() },
   ],
   products: [
     {

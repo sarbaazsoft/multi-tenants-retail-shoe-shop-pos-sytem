@@ -328,7 +328,7 @@ router.post(['/bootstrap', '/install-platform'], async (req: Request, res: Respo
       .query(
         `INSERT INTO deleted_store_requests (request_id, marker_key)
          VALUES (0, '__seeded_stores_and_requests_removed_v1__'),
-                (0, '__schema_v10_users_email_unique__')`
+                (0, '__schema_v11_remove_requested_slug__')`
       )
       .catch(() => {});
 

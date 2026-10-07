@@ -72,15 +72,16 @@ export interface Ean13BarcodeResult {
 }
 
 /**
- * Generates an automatic minimum-length Code-128 barcode without barcode prefix or zero-padding:
- * Formula: [2-Letter Category Code]-[Exact Store Product ID] (e.g. "CA-9", "SN-12", "TD-129")
+ * Generates an automatic minimum-length Code-128 barcode:
+ * Formula: [2-Letter Category Code]-[Padded Product ID if 1-9 else Exact Store Product ID]
+ * (e.g. "MN-01", "MN-09", "MN-10", "TD-12", "CA-129")
  */
 export function generateCode128Barcode(
   productId: number | string,
   categoryOrPrefix?: string | null
 ): Ean13BarcodeResult {
   const prodIdNum = Math.max(1, parseInt(String(productId ?? '1').replace(/\D/g, ''), 10) || 1);
-  const exactIdStr = String(prodIdNum);
+  const formattedIdStr = prodIdNum >= 1 && prodIdNum <= 9 ? `0${prodIdNum}` : String(prodIdNum);
 
   const rawCat = String(categoryOrPrefix || '').trim();
   // If rawCat is a numeric old prefix like '0108923', ignore it and use 'CA' or clean category prefix
@@ -92,12 +93,12 @@ export function generateCode128Barcode(
       ? rawCat.toUpperCase()
       : parseCategoryPrefix(rawCat);
 
-  const barcode = `${catPrefix}-${exactIdStr}`;
+  const barcode = `${catPrefix}-${formattedIdStr}`;
 
   return {
     barcode,
     prefix: catPrefix,
-    paddedProductId: exactIdStr,
+    paddedProductId: formattedIdStr,
     productId: prodIdNum,
     checkDigit: 0,
     format: 'CODE128',
@@ -160,11 +161,12 @@ export function parseEan13Barcode(barcode: string): {
     const idStr = code128Match[2];
     const prodId = parseInt(idStr, 10);
     if (!isNaN(prodId) && prodId >= 1) {
+      const formattedPadded = prodId >= 1 && prodId <= 9 ? `0${prodId}` : String(prodId);
       return {
         isValid: true,
         prefix,
         productId: prodId,
-        paddedProductId: String(prodId),
+        paddedProductId: formattedPadded,
         checkDigit: 0,
       };
     }

@@ -578,11 +578,24 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({
                         )}
                       </td>
 
-                      {/* Article */}
+                      {/* Article & Identifiers */}
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-slate-900 dark:text-white text-sm">
                           {p.article || p.name}
                         </div>
+                        {p.sku ? (
+                          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-md border border-purple-200 dark:border-purple-800/60 shadow-2xs">
+                              <span className="text-[9px] font-extrabold uppercase tracking-wider text-purple-500 dark:text-purple-400">SKU:</span>
+                              <span>{p.sku}</span>
+                            </span>
+                          </div>
+                        ) : null}
+                        {p.name && p.article && p.name.toUpperCase() !== p.article.toUpperCase() ? (
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[200px] mt-0.5">
+                            {p.name}
+                          </div>
+                        ) : null}
                       </td>
 
                       {/* Brand & Category Capsules (Pills) */}

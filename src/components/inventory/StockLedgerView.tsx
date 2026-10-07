@@ -229,6 +229,11 @@ export const StockLedgerView: React.FC = () => {
 
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-slate-900 dark:text-white">{m.article || m.productName}</div>
+                        {m.sku ? (
+                          <div className="font-mono text-[11px] font-bold text-purple-600 dark:text-purple-300 mt-0.5">
+                            SKU: {m.sku}
+                          </div>
+                        ) : null}
                       </td>
 
                       <td className="py-3.5 px-3">{getBadge(m.movementType)}</td>

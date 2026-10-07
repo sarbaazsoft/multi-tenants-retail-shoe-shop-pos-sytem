@@ -335,23 +335,67 @@ router.post('/renew-subscription', async (req: Request, res: Response) => {
       );
       renewalRow = updatedReq.rows[0];
     } else {
-      const insertedReq = await pgClient.query<any>(
-        `INSERT INTO store_requests (
-           store_name, owner_email, owner_phone,
-           business_address, plan, request_type, notes, status, provisioned_tenant_id, created_at, updated_at
-         )
-         VALUES ($1, $2, $3, $4, $5, 'RENEWAL', $6, 'PENDING', $7, NOW(), NOW())
-         RETURNING *`,
-        [
-          storeName,
-          ownerEmail,
-          ownerPhone,
-          businessAddress,
-          requestedPlan,
-          fullNotes,
-          tenantRow.id,
-        ]
-      );
+      let insertedReq;
+      try {
+        insertedReq = await pgClient.query<any>(
+          `INSERT INTO store_requests (
+             store_name, owner_email, owner_phone,
+             business_address, plan, request_type, notes, status, provisioned_tenant_id, created_at, updated_at
+           )
+           VALUES ($1, $2, $3, $4, $5, 'RENEWAL', $6, 'PENDING', $7, NOW(), NOW())
+           RETURNING *`,
+          [
+            storeName,
+            ownerEmail,
+            ownerPhone,
+            businessAddress,
+            requestedPlan,
+            fullNotes,
+            tenantRow.id,
+          ]
+        );
+      } catch (insertErr: any) {
+        if (
+          insertErr &&
+          (String(insertErr.message || '').includes('requested_slug') ||
+            String(insertErr.message || '').includes('slug') ||
+            String(insertErr.constraint || '').includes('slug'))
+        ) {
+          await pgClient.exec(`
+            DO $$
+            BEGIN
+              BEGIN
+                ALTER TABLE store_requests ALTER COLUMN requested_slug DROP NOT NULL;
+              EXCEPTION WHEN OTHERS THEN NULL;
+              END;
+              BEGIN
+                ALTER TABLE store_requests DROP COLUMN IF EXISTS requested_slug CASCADE;
+              EXCEPTION WHEN OTHERS THEN NULL;
+              END;
+            END $$;
+          `).catch(() => {});
+
+          insertedReq = await pgClient.query<any>(
+            `INSERT INTO store_requests (
+               store_name, owner_email, owner_phone,
+               business_address, plan, request_type, notes, status, provisioned_tenant_id, created_at, updated_at
+             )
+             VALUES ($1, $2, $3, $4, $5, 'RENEWAL', $6, 'PENDING', $7, NOW(), NOW())
+             RETURNING *`,
+            [
+              storeName,
+              ownerEmail,
+              ownerPhone,
+              businessAddress,
+              requestedPlan,
+              fullNotes,
+              tenantRow.id,
+            ]
+          );
+        } else {
+          throw insertErr;
+        }
+      }
       renewalRow = insertedReq.rows[0];
     }
 

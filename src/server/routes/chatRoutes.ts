@@ -268,7 +268,7 @@ async function queryLiveStoreDatabase(
     if (cleanEntity === 'brands_categories') {
       const [brandsRes, catsRes] = await Promise.all([
         pgClient.query(`SELECT DISTINCT brand as name FROM products WHERE tenant_id = $1 AND brand IS NOT NULL AND TRIM(brand) != '' ORDER BY brand ASC`, [tenantId]),
-        pgClient.query(`SELECT id, name FROM categories WHERE tenant_id = $1 ORDER BY name ASC`, [tenantId]),
+        pgClient.query(`SELECT id, name FROM categories ORDER BY name ASC`),
       ]);
       return {
         entity: 'brands_categories',
@@ -423,7 +423,7 @@ router.post('/', async (req: Request, res: Response) => {
           )
           .catch(() => ({ rows: [] })),
         pgClient
-          .query<any>('SELECT name FROM categories WHERE tenant_id = $1 ORDER BY name ASC', [tenantId])
+          .query<any>('SELECT name FROM categories ORDER BY name ASC')
           .catch(() => ({ rows: [] })),
       ]);
 

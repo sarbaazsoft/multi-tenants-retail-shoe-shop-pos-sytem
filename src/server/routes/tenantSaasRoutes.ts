@@ -361,17 +361,64 @@ router.post('/saas/store-requests', async (req: Request, res: Response) => {
       });
     }
 
-    const insertRes = await pgClient.query<{ id: number }>(
-      `INSERT INTO store_requests (store_name, owner_email, owner_phone, plan, status)
-       VALUES ($1, $2, $3, $4, 'PENDING')
-       RETURNING id`,
-      [
-        cleanStoreName,
-        cleanOwnerEmail,
-        cleanOwnerPhone,
-        String(plan || 'PRO_TRIAL').trim(),
-      ]
-    );
+    let insertRes;
+    try {
+      insertRes = await pgClient.query<{ id: number }>(
+        `INSERT INTO store_requests (store_name, owner_email, owner_phone, plan, status)
+         VALUES ($1, $2, $3, $4, 'PENDING')
+         RETURNING id`,
+        [
+          cleanStoreName,
+          cleanOwnerEmail,
+          cleanOwnerPhone,
+          String(plan || 'PRO_TRIAL').trim(),
+        ]
+      );
+    } catch (insertErr: any) {
+      if (
+        insertErr &&
+        (String(insertErr.message || '').includes('requested_slug') ||
+          String(insertErr.message || '').includes('slug') ||
+          String(insertErr.constraint || '').includes('slug'))
+      ) {
+        // Drop requested_slug NOT NULL constraint and remove column from relation
+        await pgClient.exec(`
+          DO $$
+          BEGIN
+            BEGIN
+              ALTER TABLE store_requests ALTER COLUMN requested_slug DROP NOT NULL;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+            BEGIN
+              ALTER TABLE store_requests DROP COLUMN IF EXISTS requested_slug CASCADE;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+            BEGIN
+              ALTER TABLE store_requests DROP COLUMN IF EXISTS slug CASCADE;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+            BEGIN
+              ALTER TABLE store_requests DROP COLUMN IF EXISTS subdomain CASCADE;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+          END $$;
+        `).catch(() => {});
+
+        insertRes = await pgClient.query<{ id: number }>(
+          `INSERT INTO store_requests (store_name, owner_email, owner_phone, plan, status)
+           VALUES ($1, $2, $3, $4, 'PENDING')
+           RETURNING id`,
+          [
+            cleanStoreName,
+            cleanOwnerEmail,
+            cleanOwnerPhone,
+            String(plan || 'PRO_TRIAL').trim(),
+          ]
+        );
+      } else {
+        throw insertErr;
+      }
+    }
 
     return res.status(201).json({
       success: true,
@@ -1283,7 +1330,7 @@ router.get('/superadmin/tenants/:id/export-sql', requireAuth, requireSuperAdmin,
       { table: 'tenants', where: 'WHERE id = $1', params: [tenantId] },
       { table: 'company_settings', where: 'WHERE tenant_id = $1', params: [tenantId] },
       { table: 'users', where: "WHERE tenant_id = $1 AND role != 'SUPERADMIN' ORDER BY id ASC", params: [tenantId] },
-      { table: 'categories', where: 'WHERE tenant_id = $1 ORDER BY id ASC', params: [tenantId] },
+      { table: 'categories', where: 'ORDER BY id ASC', params: [] },
       { table: 'products', where: 'WHERE tenant_id = $1 ORDER BY id ASC', params: [tenantId] },
       { table: 'suppliers', where: 'WHERE tenant_id = $1 ORDER BY id ASC', params: [tenantId] },
       { table: 'customers', where: 'WHERE tenant_id = $1 ORDER BY id ASC', params: [tenantId] },
@@ -1392,7 +1439,27 @@ router.post('/superadmin/import-sql', requireAuth, requireSuperAdmin, async (req
     }
 
     await pgClient.waitReady;
-    await ensureDatabaseSchema();
+    await pgClient.exec(`
+      DO $$
+      BEGIN
+        BEGIN
+          ALTER TABLE categories ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+        BEGIN
+          ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS requested_slug TEXT DEFAULT '';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+        BEGIN
+          ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS slug TEXT DEFAULT '';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+        BEGIN
+          ALTER TABLE tenants ADD COLUMN IF NOT EXISTS slug TEXT DEFAULT '';
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+      END $$;
+    `).catch(() => {});
     await pgClient.exec(sql);
     await ensureDatabaseSchema();
 
@@ -1577,7 +1644,6 @@ async function handleDeleteTenantStore(req: AuthenticatedRequest, res: Response)
         params: [tenantId],
       },
       { sql: `DELETE FROM products WHERE tenant_id = $1`, params: [tenantId] },
-      { sql: `DELETE FROM categories WHERE tenant_id = $1`, params: [tenantId] },
       { sql: `DELETE FROM customers WHERE tenant_id = $1`, params: [tenantId] },
       { sql: `DELETE FROM suppliers WHERE tenant_id = $1`, params: [tenantId] },
       {

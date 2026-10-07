@@ -171,7 +171,6 @@ const DATABASE_TABLE_DDL: string[] = [
   )`,
   `CREATE TABLE IF NOT EXISTS categories (
     id SERIAL PRIMARY KEY,
-    tenant_id INTEGER NOT NULL DEFAULT 1,
     name TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
   )`,
@@ -353,8 +352,7 @@ const DATABASE_INDEX_DDL: string[] = [
   `CREATE INDEX IF NOT EXISTS users_tenant_idx ON users(tenant_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique_idx ON users (LOWER(BTRIM(email)))`,
   `CREATE INDEX IF NOT EXISTS company_settings_tenant_idx ON company_settings(tenant_id)`,
-  `CREATE INDEX IF NOT EXISTS categories_tenant_idx ON categories(tenant_id)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS categories_tenant_name_lower_idx ON categories(tenant_id, LOWER(TRIM(name)))`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS categories_name_lower_unique_idx ON categories (LOWER(TRIM(name)))`,
   `CREATE INDEX IF NOT EXISTS products_tenant_idx ON products(tenant_id)`,
   `CREATE INDEX IF NOT EXISTS products_tenant_product_no_idx ON products(tenant_id, tenant_product_no)`,
   `CREATE INDEX IF NOT EXISTS products_brand_idx ON products(brand)`,
@@ -406,10 +404,69 @@ export async function ensureDatabaseSchema(): Promise<void> {
       // 1b. Ensure deprecated tables, columns, and slug/subdomain columns are permanently removed
       await pgClient.exec(`
         DROP TABLE IF EXISTS brands CASCADE;
-        ALTER TABLE tenants DROP COLUMN IF EXISTS slug;
-        ALTER TABLE tenants DROP COLUMN IF EXISTS subdomain;
-        ALTER TABLE tenants DROP COLUMN IF EXISTS sub_domain;
-        ALTER TABLE products DROP COLUMN IF EXISTS pricing_policy;
+        DO $$
+        BEGIN
+          BEGIN
+            ALTER TABLE store_requests ALTER COLUMN requested_slug DROP NOT NULL;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS requested_slug CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS slug CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS subdomain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS sub_domain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS requested_subdomain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE tenants ALTER COLUMN slug DROP NOT NULL;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE tenants DROP COLUMN IF EXISTS slug CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE tenants ALTER COLUMN subdomain DROP NOT NULL;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE tenants DROP COLUMN IF EXISTS subdomain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE tenants DROP COLUMN IF EXISTS sub_domain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE products DROP COLUMN IF EXISTS pricing_policy;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            DROP INDEX IF EXISTS categories_tenant_idx;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            DROP INDEX IF EXISTS categories_tenant_name_lower_idx;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE categories DROP COLUMN IF EXISTS tenant_id CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+        END $$;
       `).catch(() => {});
 
       // 2. Create all indexes independently so an index notice never aborts table creation
@@ -641,13 +698,56 @@ export async function ensureSaasControlPlane(): Promise<void> {
     try {
       await pgClient.waitReady;
 
+      // Always ensure deprecated slug and subdomain columns (including requested_slug in store_requests) are dropped
+      await pgClient.exec(`
+        DO $$
+        BEGIN
+          BEGIN
+            ALTER TABLE store_requests ALTER COLUMN requested_slug DROP NOT NULL;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS requested_slug CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS slug CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS subdomain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS sub_domain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE store_requests DROP COLUMN IF EXISTS requested_subdomain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE tenants DROP COLUMN IF EXISTS slug CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE tenants DROP COLUMN IF EXISTS subdomain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE tenants DROP COLUMN IF EXISTS sub_domain CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+        END $$;
+      `).catch(() => {});
+
       // Fast-path check: if schema & control plane have already been verified in this persistent DB, skip heavy DDL & bcrypt loops
       const fastCheck = await pgClient
         .query<{ count: string; has_core_tables: boolean }>(
           `SELECT COUNT(*) as count,
                   (to_regclass('public.users') IS NOT NULL AND to_regclass('public.tenants') IS NOT NULL) as has_core_tables
            FROM deleted_store_requests
-           WHERE marker_key = '__schema_v10_users_email_unique__'`
+           WHERE marker_key = '__schema_v11_remove_requested_slug__'`
         )
         .catch(() => null);
 
@@ -834,7 +934,7 @@ export async function ensureSaasControlPlane(): Promise<void> {
 
     await pgClient
       .query(
-        `INSERT INTO deleted_store_requests (request_id, marker_key) VALUES (0, '__schema_v10_users_email_unique__')`
+        `INSERT INTO deleted_store_requests (request_id, marker_key) VALUES (0, '__schema_v11_remove_requested_slug__')`
       )
       .catch(() => {});
 

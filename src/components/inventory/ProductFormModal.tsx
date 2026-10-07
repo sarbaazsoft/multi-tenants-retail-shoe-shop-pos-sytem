@@ -114,11 +114,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const effectiveProductId =
     product?.tenantProductNo || product?.tenant_product_no || product?.id || nextProductId;
 
-  // Step 2 & 3: Article & SKU (Auto-suggested from classification, fully editable in Step 3 like Barcode)
+  // Step 2 & 3: Article & SKU (Auto-suggested from classification, SKU auto-generated in background)
   const [article, setArticle] = useState<string>(product?.article || '');
   const [isArticleManuallyEdited, setIsArticleManuallyEdited] = useState<boolean>(Boolean(product?.article));
   const [sku, setSku] = useState<string>(product?.sku || '');
-  const [isSkuManuallyEdited, setIsSkuManuallyEdited] = useState<boolean>(Boolean(product?.sku));
   const [articleSkuValidation, setArticleSkuValidation] = useState<ArticleSkuValidationState>({ status: 'idle' });
   const [isSideEndLabelOpen, setIsSideEndLabelOpen] = useState(false);
   const [isBarcodeStickerOpen, setIsBarcodeStickerOpen] = useState(false);
@@ -195,7 +194,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const currencySymbol = effectiveSettings?.currency_symbol || effectiveSettings?.currencySymbol || 'Rs.';
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const articleInputRef = useRef<HTMLInputElement | null>(null);
-  const skuInputRef = useRef<HTMLInputElement | null>(null);
 
   // Cost and price integer values
   const costVal = typeof costPrice === 'number' && !isNaN(costPrice) ? Math.max(0, Math.round(costPrice)) : 0;
@@ -246,11 +244,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       !forceResetArticle && isArticleManuallyEdited && article.trim()
         ? article.trim().toUpperCase()
         : storeStandardArticle;
-    // SKU uses the store's standard classification identifier unless manually edited
+    // SKU is automatically generated in the background using current logic: [BrandPrefix]-[StoreStandardArticle]-[pId]
     const designedSku =
-      !forceResetArticle && isSkuManuallyEdited && sku.trim()
-        ? sku.trim().toUpperCase()
-        : product?.sku && !forceResetArticle
+      product?.sku && !forceResetArticle
         ? String(product.sku).toUpperCase()
         : generateSku(brandPfx, storeStandardArticle, pId);
 
@@ -284,13 +280,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     setArticle(nextArticle);
   };
 
-  const handleSkuChange = (rawVal: string) => {
-    // Strictly update ONLY SKU; never alter Article, Barcode, or Product ID
-    const nextSku = rawVal.toUpperCase();
-    setIsSkuManuallyEdited(true);
-    setSku(nextSku);
-  };
-
   const handleResetStoreArticle = async () => {
     setErrorMessage(null);
     setIsArticleManuallyEdited(false);
@@ -306,27 +295,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       });
       if (suggested?.suggestedArticle) {
         setArticle(String(suggested.suggestedArticle).toUpperCase());
-      }
-    } catch {}
-  };
-
-  const handleResetStoreSku = async () => {
-    setErrorMessage(null);
-    setIsSkuManuallyEdited(false);
-    const brandPfx = currentBrandPrefix || 'LOC';
-    const catPfx = currentCategoryPrefix || 'MN';
-    const storeStandardArticle = generateSuggestedArticle(catPfx, effectiveProductId);
-    const fallbackSku = generateSku(brandPfx, storeStandardArticle, effectiveProductId);
-    setSku(fallbackSku);
-    try {
-      const suggested = await api.products.suggestSku({
-        brand: currentBrandName,
-        category: currentCategoryName,
-        productId: effectiveProductId,
-        excludeId: product?.id,
-      });
-      if (suggested?.sku) {
-        setSku(String(suggested.sku).toUpperCase());
       }
     } catch {}
   };
@@ -446,7 +414,16 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   // Real-time Article & SKU Uniqueness Validation effect (strictly scoped to this store)
   useEffect(() => {
     const cleanArt = article.trim().toUpperCase();
-    const cleanSkuVal = sku.trim().toUpperCase();
+    let cleanSkuVal = sku.trim().toUpperCase();
+
+    // Ensure SKU is auto-generated in the background using current logic if not yet populated
+    if (!cleanSkuVal) {
+      const brandPfx = parseBrandPrefix(brand || 'Local');
+      const catPfx = parseCategoryPrefix(category || 'Men');
+      const stdArt = generateSuggestedArticle(catPfx, effectiveProductId).toUpperCase();
+      cleanSkuVal = generateSku(brandPfx, stdArt, effectiveProductId).toUpperCase();
+      setSku(cleanSkuVal);
+    }
 
     if (!cleanArt) {
       setArticleSkuValidation({
@@ -458,19 +435,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       return;
     }
 
-    if (!cleanSkuVal) {
-      setArticleSkuValidation({
-        status: 'invalid',
-        duplicateField: 'sku',
-        skuError: 'SKU is required for store inventory identification.',
-        error: 'SKU is required for store inventory identification.',
-      });
-      return;
-    }
-
     setArticleSkuValidation({
       status: 'checking',
-      message: 'Checking Article & SKU uniqueness in this store...',
+      message: 'Checking Article uniqueness in this store...',
     });
 
     const timer = setTimeout(async () => {
@@ -484,24 +451,24 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             articleError: res.articleError || (res.duplicateField === 'article' ? res.error : undefined),
             skuError: res.skuError || (res.duplicateField === 'sku' ? res.error : undefined),
             existingProduct: res.existingProduct,
-            error: res.error || 'Article or SKU already exists in this store.',
+            error: res.error || (res.duplicateField === 'article' ? 'Article code already exists in this store.' : 'Product code collision in this store.'),
           });
         } else {
           setArticleSkuValidation({
             status: 'valid',
-            message: res.message || 'Article & SKU verified unique in this store.',
+            message: res.message || 'Article verified unique in this store.',
           });
         }
       } catch {
         setArticleSkuValidation({
           status: 'valid',
-          message: 'Article & SKU format ready.',
+          message: 'Article format ready.',
         });
       }
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [article, sku, product?.id]);
+  }, [article, sku, brand, category, effectiveProductId, product?.id]);
 
   // Real-time Barcode Validation effect (Format, Checksum, and DB Duplicate Check)
   useEffect(() => {
@@ -672,19 +639,21 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       articleInputRef.current?.focus();
       return false;
     }
-    if (!sku.trim()) {
-      setErrorMessage('Please enter a SKU code, or click "Reset to Store SKU".');
-      skuInputRef.current?.focus();
-      return false;
+    // Auto-generate SKU in background using current logic if empty
+    let cleanSkuVal = sku.trim().toUpperCase();
+    if (!cleanSkuVal) {
+      const brandPfx = parseBrandPrefix(brand || 'Local');
+      const catPfx = parseCategoryPrefix(category || 'Men');
+      const stdArt = generateSuggestedArticle(catPfx, effectiveProductId).toUpperCase();
+      cleanSkuVal = generateSku(brandPfx, stdArt, effectiveProductId).toUpperCase();
+      setSku(cleanSkuVal);
     }
     if (articleSkuValidation.status === 'invalid') {
-      setErrorMessage(articleSkuValidation.error || 'Article or SKU already exists in this store.');
-      if (articleSkuValidation.duplicateField === 'sku') {
-        skuInputRef.current?.focus();
-      } else {
+      if (articleSkuValidation.duplicateField === 'article') {
+        setErrorMessage(articleSkuValidation.error || 'Article already exists in this store.');
         articleInputRef.current?.focus();
+        return false;
       }
-      return false;
     }
     const clean = barcode.trim();
     if (!clean) {
@@ -1550,150 +1519,90 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-slate-800">
                   <div className="flex items-center gap-2">
                     <Barcode className="w-4 h-4 text-indigo-600 dark:text-blue-400" />
-                    <h4 className="font-bold text-gray-900 dark:text-white text-sm">3. Article, SKU &amp; Barcode Identification (Store-Wide Unique)</h4>
+                    <h4 className="font-bold text-gray-900 dark:text-white text-sm">3. Article &amp; Barcode Identification (Store-Wide Unique)</h4>
                   </div>
                   <span className="text-[11px] text-gray-400 dark:text-slate-500">Step 3 of 3</span>
                 </div>
 
-                {/* EDITABLE ARTICLE & SKU SECTION */}
+                {/* EDITABLE ARTICLE SECTION (SKU IS AUTO-GENERATED IN BACKGROUND) */}
                 <div className="space-y-4 pb-4 border-b border-gray-100 dark:border-slate-800">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* 1. Article Input */}
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                        <label className="font-bold text-gray-900 dark:text-slate-200 text-xs flex items-center gap-1">
-                          <span>Article Code (Store Unique)</span>
-                          <span className="text-red-500">*</span>
-                        </label>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={handleResetStoreArticle}
-                            className="px-2 py-1 bg-indigo-50 dark:bg-blue-950/50 hover:bg-indigo-100 dark:hover:bg-blue-900/60 text-indigo-600 dark:text-blue-400 rounded-lg font-semibold text-[10px] transition flex items-center gap-1 cursor-pointer border border-indigo-200 dark:border-blue-800/60"
-                            title="Reset to auto-generated store standard article code"
-                          >
-                            <Sparkles className="w-3 h-3 text-indigo-600 dark:text-blue-400" />
-                            <span>Reset Article</span>
-                          </button>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <label className="font-bold text-gray-900 dark:text-slate-200 text-xs flex items-center gap-1">
+                        <span>Article Code (Store Unique)</span>
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={handleResetStoreArticle}
+                          className="px-2 py-1 bg-indigo-50 dark:bg-blue-950/50 hover:bg-indigo-100 dark:hover:bg-blue-900/60 text-indigo-600 dark:text-blue-400 rounded-lg font-semibold text-[10px] transition flex items-center gap-1 cursor-pointer border border-indigo-200 dark:border-blue-800/60"
+                          title="Reset to auto-generated store standard article code"
+                        >
+                          <Sparkles className="w-3 h-3 text-indigo-600 dark:text-blue-400" />
+                          <span>Reset Article</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleArticleChange('');
+                            setTimeout(() => articleInputRef.current?.focus(), 50);
+                          }}
+                          className="px-2 py-1 bg-slate-100 dark:bg-[#070B14] hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-[10px] transition flex items-center gap-1 cursor-pointer border border-slate-300 dark:border-slate-700"
+                          title="Clear and focus to enter custom or box article code"
+                        >
+                          <Tag className="w-3 h-3 text-slate-600 dark:text-slate-400" />
+                          <span>Box Article</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        ref={articleInputRef}
+                        id="product-article-step3-input"
+                        type="text"
+                        required
+                        placeholder={`e.g. ${generateSuggestedArticle(currentCategoryPrefix || 'CA', effectiveProductId)}`}
+                        value={article}
+                        onChange={(e) => handleArticleChange(e.target.value)}
+                        className={`w-full pl-9 pr-16 py-2.5 bg-white dark:bg-[#070B14] border-2 rounded-xl font-mono font-bold text-sm text-gray-900 dark:text-white outline-none transition shadow-xs uppercase ${
+                          article.trim().length > 0 &&
+                          !(articleSkuValidation.status === 'invalid' && articleSkuValidation.duplicateField === 'article')
+                            ? 'border-emerald-400 dark:border-emerald-500 focus:border-emerald-600 dark:focus:border-emerald-400'
+                            : 'border-red-400 dark:border-red-500 focus:border-red-600 dark:focus:border-red-400'
+                        }`}
+                      />
+                      <Tag className="w-4 h-4 text-indigo-600 dark:text-blue-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        {article && (
                           <button
                             type="button"
                             onClick={() => {
                               handleArticleChange('');
-                              setTimeout(() => articleInputRef.current?.focus(), 50);
+                              articleInputRef.current?.focus();
                             }}
-                            className="px-2 py-1 bg-slate-100 dark:bg-[#070B14] hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg font-semibold text-[10px] transition flex items-center gap-1 cursor-pointer border border-slate-300 dark:border-slate-700"
-                            title="Clear and focus to enter custom or box article code"
+                            className="px-1.5 py-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 rounded text-[10px] font-semibold cursor-pointer"
                           >
-                            <Tag className="w-3 h-3 text-slate-600 dark:text-slate-400" />
-                            <span>Box Article</span>
+                            Clear
                           </button>
-                        </div>
+                        )}
                       </div>
-
-                      <div className="relative">
-                        <input
-                          ref={articleInputRef}
-                          id="product-article-step3-input"
-                          type="text"
-                          required
-                          placeholder={`e.g. ${generateSuggestedArticle(currentCategoryPrefix || 'CA', effectiveProductId)}`}
-                          value={article}
-                          onChange={(e) => handleArticleChange(e.target.value)}
-                          className={`w-full pl-9 pr-16 py-2.5 bg-white dark:bg-[#070B14] border-2 rounded-xl font-mono font-bold text-sm text-gray-900 dark:text-white outline-none transition shadow-xs uppercase ${
-                            article.trim().length > 0 &&
-                            !(articleSkuValidation.status === 'invalid' && articleSkuValidation.duplicateField !== 'sku')
-                              ? 'border-emerald-400 dark:border-emerald-500 focus:border-emerald-600 dark:focus:border-emerald-400'
-                              : 'border-red-400 dark:border-red-500 focus:border-red-600 dark:focus:border-red-400'
-                          }`}
-                        />
-                        <Tag className="w-4 h-4 text-indigo-600 dark:text-blue-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                          {article && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleArticleChange('');
-                                articleInputRef.current?.focus();
-                              }}
-                              className="px-1.5 py-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 rounded text-[10px] font-semibold cursor-pointer"
-                            >
-                              Clear
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-gray-500 dark:text-slate-400">
-                        Must be unique within your store catalog.
-                      </p>
                     </div>
-
-                    {/* 2. SKU Input */}
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                        <label className="font-bold text-gray-900 dark:text-slate-200 text-xs flex items-center gap-1">
-                          <span>SKU Code (Store Unique)</span>
-                          <span className="text-red-500">*</span>
-                        </label>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={handleResetStoreSku}
-                            className="px-2 py-1 bg-indigo-50 dark:bg-blue-950/50 hover:bg-indigo-100 dark:hover:bg-blue-900/60 text-indigo-600 dark:text-blue-400 rounded-lg font-semibold text-[10px] transition flex items-center gap-1 cursor-pointer border border-indigo-200 dark:border-blue-800/60"
-                            title="Reset to auto-generated store standard SKU"
-                          >
-                            <Sparkles className="w-3 h-3 text-indigo-600 dark:text-blue-400" />
-                            <span>Reset SKU</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="relative">
-                        <input
-                          ref={skuInputRef}
-                          id="product-sku-step3-input"
-                          type="text"
-                          required
-                          placeholder={`e.g. ${generateSku(currentBrandPrefix || 'LOC', generateSuggestedArticle(currentCategoryPrefix || 'CA', effectiveProductId), effectiveProductId)}`}
-                          value={sku}
-                          onChange={(e) => handleSkuChange(e.target.value)}
-                          className={`w-full pl-9 pr-16 py-2.5 bg-white dark:bg-[#070B14] border-2 rounded-xl font-mono font-bold text-sm text-gray-900 dark:text-white outline-none transition shadow-xs uppercase ${
-                            sku.trim().length > 0 &&
-                            !(articleSkuValidation.status === 'invalid' && articleSkuValidation.duplicateField === 'sku')
-                              ? 'border-emerald-400 dark:border-emerald-500 focus:border-emerald-600 dark:focus:border-emerald-400'
-                              : 'border-red-400 dark:border-red-500 focus:border-red-600 dark:focus:border-red-400'
-                          }`}
-                        />
-                        <Boxes className="w-4 h-4 text-indigo-600 dark:text-blue-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                          {sku && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleSkuChange('');
-                                skuInputRef.current?.focus();
-                              }}
-                              className="px-1.5 py-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-slate-200 rounded text-[10px] font-semibold cursor-pointer"
-                            >
-                              Clear
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-gray-500 dark:text-slate-400">
-                        Must be unique within your store catalog.
-                      </p>
-                    </div>
+                    <p className="text-[10px] text-gray-500 dark:text-slate-400">
+                      Must be unique within your store catalog.
+                    </p>
                   </div>
 
-                  {/* REAL-TIME ARTICLE & SKU UNIQUENESS FEEDBACK */}
+                  {/* REAL-TIME ARTICLE UNIQUENESS FEEDBACK */}
                   {articleSkuValidation.status === 'checking' && (
                     <div className="alert-warning flex items-center gap-2.5 text-xs animate-in fade-in">
                       <RefreshCw className="w-4 h-4 animate-spin text-amber-600 dark:text-amber-400 shrink-0" />
-                      <span>{articleSkuValidation.message || 'Checking Article & SKU uniqueness in this store...'}</span>
+                      <span>{articleSkuValidation.message || 'Checking Article uniqueness in this store...'}</span>
                     </div>
                   )}
 
-                  {article.trim().length > 0 && sku.trim().length > 0 && articleSkuValidation.status === 'valid' && (
+                  {article.trim().length > 0 && articleSkuValidation.status === 'valid' && (
                     <div className="alert-success flex flex-wrap items-center justify-between gap-2 text-xs animate-in fade-in">
                       <div className="flex items-center gap-2 text-emerald-950 dark:text-emerald-300 font-medium">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -1702,12 +1611,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                             {article.trim().toUpperCase()}
                           </span>
                           <span className="mx-1.5 opacity-40">|</span>
-                          <span className="font-bold text-emerald-900 dark:text-emerald-300 font-mono">
-                            {sku.trim().toUpperCase()}
-                          </span>
-                          <span className="mx-1.5 opacity-40">|</span>
                           <span className="text-emerald-700 dark:text-emerald-400">
-                            Article &amp; SKU verified unique in this store
+                            Article verified unique in this store
                           </span>
                         </div>
                       </div>
@@ -1718,20 +1623,18 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     </div>
                   )}
 
-                  {(article.trim().length === 0 || sku.trim().length === 0 || articleSkuValidation.status === 'invalid') && (
+                  {(article.trim().length === 0 || articleSkuValidation.status === 'invalid') && (
                     <div className="alert-danger flex flex-wrap items-center justify-between gap-2 text-xs animate-in fade-in">
                       <div className="flex items-center gap-2 text-red-800 dark:text-red-300">
                         <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
                         <span>
                           {article.trim().length === 0
                             ? 'Article code is required for product identification and box labels.'
-                            : sku.trim().length === 0
-                            ? 'SKU code is required for store inventory identification.'
-                            : articleSkuValidation.error || 'Article or SKU already exists in this store.'}
+                            : articleSkuValidation.error || 'Article code already exists in this store.'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        {(article.trim().length === 0 || articleSkuValidation.duplicateField !== 'sku') && (
+                      {article.trim().length === 0 && (
+                        <div className="flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={handleResetStoreArticle}
@@ -1740,18 +1643,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                             <Sparkles className="w-3 h-3" />
                             <span>Restore Store Article</span>
                           </button>
-                        )}
-                        {(sku.trim().length === 0 || articleSkuValidation.duplicateField === 'sku') && (
-                          <button
-                            type="button"
-                            onClick={handleResetStoreSku}
-                            className="btn-danger px-2.5 py-1 text-[11px] flex items-center gap-1 shadow-2xs cursor-pointer"
-                          >
-                            <Sparkles className="w-3 h-3" />
-                            <span>Restore Store SKU</span>
-                          </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2040,10 +1933,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     isSubmitting ||
                     barcodeValidation.status === 'invalid' ||
                     barcodeValidation.status === 'checking' ||
-                    articleSkuValidation.status === 'invalid' ||
+                    (articleSkuValidation.status === 'invalid' && articleSkuValidation.duplicateField === 'article') ||
                     articleSkuValidation.status === 'checking' ||
                     !article.trim() ||
-                    !sku.trim() ||
                     !barcode.trim()
                   }
                   className="btn-primary px-6 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-md font-bold disabled:opacity-50"
