@@ -188,8 +188,8 @@ export function useDataPerIntersectionObserver(
 
     // Reset all [data-per] elements to 0% initially so the scroll-in animation is crisp
     const allDataPerNodes = Array.from(
-      rootEl.querySelectorAll<HTMLElement>('[data-per]')
-    );
+      rootEl.querySelectorAll('[data-per]')
+    ) as HTMLElement[];
     allDataPerNodes.forEach((node) => {
       const role = node.getAttribute('data-per-role');
       if (role === 'bar') {

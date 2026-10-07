@@ -177,15 +177,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const scanBurstCountRef = useRef<number>(0);
   const autoLookupTimerRef = useRef<any>(null);
 
-  const currencySymbol = companySettings?.currency_symbol || companySettings?.currencySymbol || 'Rs.';
-  const rawPricingMode = String(
-    companySettings?.pricingPolicy ||
-    companySettings?.pricing_policy ||
-    companySettings?.pricing_mode ||
-    companySettings?.pricingMode ||
-    'FIXED'
-  ).toUpperCase();
-  const isFixedPolicy = rawPricingMode === 'FIXED';
+  const currencySymbol = companySettings?.currencySymbol || 'Rs.';
+  const rawPricingPolicy = String(companySettings?.pricingPolicy || 'FIXED').toUpperCase();
+  const isFixedPolicy = rawPricingPolicy === 'FIXED';
 
   // Offline Persistence & Background Synchronization Hook
   const { isOnline, pendingCount } = useOfflineSync();

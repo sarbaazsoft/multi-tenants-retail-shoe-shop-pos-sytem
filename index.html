@@ -133,10 +133,19 @@
     <script>
       (function () {
         try {
+          // Delete any deprecated registration, slug, or subdomain keys from localStorage
+          if (window.localStorage) {
+            for (var i = localStorage.length - 1; i >= 0; i--) {
+              var k = localStorage.key(i);
+              if (k && (/slug|subdomain|registration/i.test(k) || k === 'registered_store' || k === 'pos_registered')) {
+                localStorage.removeItem(k);
+              }
+            }
+          }
+
           var pathname = window.location.pathname || '';
           var search = new URLSearchParams(window.location.search || '');
-          var domainParam = (search.get('domain') || '').toLowerCase();
-          var isSuperAdmin = pathname === '/admin' || pathname.indexOf('/admin/') === 0 || domainParam.indexOf('admin.') === 0 || domainParam === 'admin';
+          var isSuperAdmin = pathname === '/admin' || pathname.indexOf('/admin/') === 0;
           var manifestLink = document.querySelector('link[rel="manifest"]');
           if (isSuperAdmin) {
             if (manifestLink) manifestLink.setAttribute('href', '/admin/manifest.webmanifest');
@@ -147,9 +156,9 @@
               }
             });
           } else {
-            var storeMatch = pathname.match(/^\/app\/([a-z0-9-]+)(?:\/|$)/i);
-            if (storeMatch && manifestLink) {
-              manifestLink.setAttribute('href', '/api/tenants/' + encodeURIComponent(storeMatch[1].toLowerCase()) + '/manifest');
+            var tenantId = search.get('tenantId');
+            if (tenantId && manifestLink) {
+              manifestLink.setAttribute('href', '/api/tenants/manifest?tenantId=' + encodeURIComponent(tenantId));
             }
           }
         } catch (_) {}

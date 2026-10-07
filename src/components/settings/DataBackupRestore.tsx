@@ -125,12 +125,12 @@ export const DataBackupRestore: React.FC<DataBackupRestoreProps> = ({
     try {
       const backupData = await api.backup.export();
 
-      const storeSlug = (backupData.meta?.storeName || companySettings?.name || 'shoepos')
+      const storeCleanName = (backupData.meta?.storeName || companySettings?.name || 'shoepos')
         .replace(/[^a-zA-Z0-9_-]/g, '_')
         .toLowerCase();
       const dateStr = new Date().toISOString().split('T')[0];
       const timeStr = new Date().toTimeString().split(' ')[0].replace(/:/g, '');
-      const filename = `shoepos-backup-${storeSlug}-${dateStr}-${timeStr}.json`;
+      const filename = `shoepos-backup-${storeCleanName}-${dateStr}-${timeStr}.json`;
 
       // Create downloadable Blob
       const blob = new Blob([JSON.stringify(backupData, null, 2)], {

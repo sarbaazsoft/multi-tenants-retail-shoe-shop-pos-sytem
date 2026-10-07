@@ -235,12 +235,7 @@ export function parseAndValidateProductsCsv(
   const headers = rawHeaders.map(normalizeHeaderKey);
 
   const pricingPolicy: PricingPolicy =
-    String(
-      companySettings?.pricing_mode ||
-        companySettings?.pricingMode ||
-        companySettings?.pricingPolicy ||
-        'FIXED'
-    ).toUpperCase() === 'NEGOTIABLE'
+    String(companySettings?.pricingPolicy || 'FIXED').toUpperCase() === 'NEGOTIABLE'
       ? 'NEGOTIABLE'
       : 'FIXED';
 

@@ -1,7 +1,7 @@
 /**
  * Utility helpers for Title Case / Capitalize input formatting and sanitization
  * across all forms, with strict exclusions for emails, URLs, passwords,
- * slugs/SKUs/barcodes, and numeric/tax identifiers.
+ * SKUs/barcodes, and numeric/tax identifiers.
  */
 
 /**
@@ -24,7 +24,7 @@ export function toTitleCaseTrimmed(value: string | undefined | null): string {
 }
 
 /**
- * Lowercase & trimmed sanitizer for excluded identifier fields (email, website, slug, subdomain).
+ * Lowercase & trimmed sanitizer for excluded identifier fields (email, website, codes).
  */
 export function toLowerTrimmed(value: string | undefined | null): string {
   if (!value) return '';

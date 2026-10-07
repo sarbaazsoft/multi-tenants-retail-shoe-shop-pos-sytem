@@ -141,12 +141,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   // Step 2: Pricing Specifications State (Integer values only, no decimals)
   // Uses global locked pricing policy configured in Installation Wizard / Settings
   const pricingPolicy: PricingPolicy = (
-    String(
-      effectiveSettings?.pricing_mode ||
-      effectiveSettings?.pricingMode ||
-      effectiveSettings?.pricingPolicy ||
-      'FIXED'
-    ).toUpperCase() === 'NEGOTIABLE'
+    String(effectiveSettings?.pricingPolicy || 'FIXED').toUpperCase() === 'NEGOTIABLE'
       ? 'NEGOTIABLE'
       : 'FIXED'
   );

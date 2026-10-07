@@ -80,9 +80,9 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({
     setIsBarcodeToolOpen(true);
   };
 
-  const currencySymbol = companySettings?.currency_symbol || companySettings?.currencySymbol || 'Rs.';
-  const rawPricingMode = String(companySettings?.pricing_mode || companySettings?.pricingMode || 'NEGOTIABLE').toUpperCase();
-  const isFixedPolicy = rawPricingMode === 'FIXED';
+  const currencySymbol = companySettings?.currencySymbol || 'Rs.';
+  const rawPricingPolicy = String(companySettings?.pricingPolicy || 'FIXED').toUpperCase();
+  const isFixedPolicy = rawPricingPolicy === 'FIXED';
   const isAdmin = currentUser?.role === 'ADMIN';
 
   useEffect(() => {

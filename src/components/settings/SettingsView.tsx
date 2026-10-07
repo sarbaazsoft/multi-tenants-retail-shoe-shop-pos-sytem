@@ -243,7 +243,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     currency: companySettings?.currency || 'PKR',
     invoice_footer: companySettings?.invoice_footer || companySettings?.invoiceFooter || 'Exchanges accepted within 7 days with original sales receipt. Thank you for shopping with us!',
     low_stock_limit: companySettings?.low_stock_limit || companySettings?.lowStockLimit || 5,
-    pricing_mode: (companySettings?.pricing_mode || companySettings?.pricingMode || companySettings?.pricingPolicy || 'FIXED').toUpperCase(),
+    pricing_mode: (companySettings?.pricingPolicy || 'FIXED').toUpperCase(),
     pricing_policy_locked: Boolean(
       companySettings?.pricing_policy_locked ??
       companySettings?.pricingPolicyLocked ??
@@ -293,7 +293,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           currency: s?.currency || 'PKR',
           invoice_footer: s?.invoice_footer || s?.invoiceFooter || '',
           low_stock_limit: s?.low_stock_limit || s?.lowStockLimit || 5,
-          pricing_mode: (s?.pricing_mode || s?.pricingMode || s?.pricingPolicy || 'FIXED').toUpperCase(),
+          pricing_mode: (s?.pricingPolicy || 'FIXED').toUpperCase(),
           pricing_policy_locked: Boolean(
             s?.pricing_policy_locked ??
             s?.pricingPolicyLocked ??
@@ -337,7 +337,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         currency: companySettings?.currency || 'PKR',
         invoice_footer: companySettings?.invoice_footer || companySettings?.invoiceFooter || '',
         low_stock_limit: companySettings?.low_stock_limit || companySettings?.lowStockLimit || 5,
-        pricing_mode: (companySettings?.pricing_mode || companySettings?.pricingMode || companySettings?.pricingPolicy || 'FIXED').toUpperCase(),
+        pricing_mode: (companySettings?.pricingPolicy || 'FIXED').toUpperCase(),
         pricing_policy_locked: Boolean(
           companySettings?.pricing_policy_locked ??
           companySettings?.pricingPolicyLocked ??

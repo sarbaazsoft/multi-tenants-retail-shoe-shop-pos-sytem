@@ -440,12 +440,7 @@ export function exportStickersToPdf(
       if (showPrice) {
         const isFixed = String(
           companySettings?.pricingPolicy ||
-          companySettings?.pricing_policy ||
-          companySettings?.pricingMode ||
-          companySettings?.pricing_mode ||
           product?.pricingPolicy ||
-          product?.pricing_mode ||
-          product?.pricing_policy ||
           'FIXED'
         ).toUpperCase() === 'FIXED';
         const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';
@@ -576,12 +571,7 @@ export function exportBatchStickersToPdf(
         if (showPrice) {
           const isFixed = String(
             companySettings?.pricingPolicy ||
-            companySettings?.pricing_policy ||
-            companySettings?.pricingMode ||
-            companySettings?.pricing_mode ||
             prod?.pricingPolicy ||
-            prod?.pricing_mode ||
-            prod?.pricing_policy ||
             'FIXED'
           ).toUpperCase() === 'FIXED';
           const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';
@@ -651,12 +641,7 @@ export function exportBatchStickersToPdf(
         if (showPrice) {
           const isFixed = String(
             companySettings?.pricingPolicy ||
-            companySettings?.pricing_policy ||
-            companySettings?.pricingMode ||
-            companySettings?.pricing_mode ||
             prod?.pricingPolicy ||
-            prod?.pricing_mode ||
-            prod?.pricing_policy ||
             'FIXED'
           ).toUpperCase() === 'FIXED';
           const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';
@@ -923,12 +908,7 @@ export function exportStickersToImage(
     if (showPrice) {
       const isFixed = String(
         companySettings?.pricingPolicy ||
-        companySettings?.pricing_policy ||
-        companySettings?.pricingMode ||
-        companySettings?.pricing_mode ||
         product?.pricingPolicy ||
-        product?.pricing_mode ||
-        product?.pricing_policy ||
         'FIXED'
       ).toUpperCase() === 'FIXED';
       const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';

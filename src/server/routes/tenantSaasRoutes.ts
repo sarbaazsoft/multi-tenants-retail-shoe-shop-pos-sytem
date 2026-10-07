@@ -2009,7 +2009,7 @@ router.get('/tenants/onboarding', requireAuth, requireAdmin, async (req: Request
           cs.invoice_footer ||
           'Thank you for shopping with us! Exchanges accepted within 7 days with original receipt.',
         lowStockLimit: Number(cs.low_stock_limit) || 5,
-        pricingMode: cs.pricing_mode || 'FIXED',
+        pricingPolicy: cs.pricing_mode || 'FIXED',
         themeColor: t.theme_color || '#7C3AED',
         backgroundColor: t.background_color || '#0F172A',
         logoUrl: cs.logo || '/pwa-512x512.png',
@@ -2086,7 +2086,7 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
       barcodePrefix,
       invoiceFooter,
       lowStockLimit,
-      pricingMode,
+      pricingPolicy,
       themeColor,
       backgroundColor,
       logoUrl,
@@ -2131,7 +2131,7 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
           'Thank you for shopping with us! Exchanges accepted within 7 days with original receipt.'
       ).trim();
     const finalLowStockLimit = Math.max(1, parseInt(String(lowStockLimit ?? 5), 10) || 5);
-    const finalPricingMode = String(pricingMode || 'FIXED').toUpperCase() === 'NEGOTIABLE' ? 'NEGOTIABLE' : 'FIXED';
+    const finalPricingMode = String(pricingPolicy || 'FIXED').toUpperCase() === 'NEGOTIABLE' ? 'NEGOTIABLE' : 'FIXED';
     const finalThemeColor = String(themeColor || '#7C3AED').trim();
     const finalBgColor = String(backgroundColor || '#0F172A').trim();
     const finalLogoUrl = String(logoUrl || '/pwa-512x512.png').trim();

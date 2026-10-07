@@ -278,7 +278,7 @@ export function normalizeCachedProduct(p: any, tenantId: number): any {
     totalStock,
     total_stock: totalStock,
     lowStockLimit: Number(p.lowStockLimit ?? p.low_stock_limit ?? 5) || 5,
-    pricingPolicy: p.pricingPolicy || p.pricing_policy || 'FIXED',
+    pricingPolicy: p.pricingPolicy || 'FIXED',
     active: p.active !== false,
     cachedAt: new Date().toISOString(),
   };

@@ -147,7 +147,6 @@ const mockStore: Record<string, any[]> = {
       cost_price: 2500,
       min_price: 3800,
       max_price: 4200,
-      pricing_policy: 'FIXED',
       total_stock: 20,
       low_stock_limit: 5,
       active: true,
@@ -1040,7 +1039,6 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
           max_price: Number(params[12] || 0),
           total_stock: Number(params[13] || 0),
           low_stock_limit: Number(params[14] || 5),
-          pricing_policy: String(params[15] || 'FIXED'),
           active: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -1058,9 +1056,8 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
           cost_price: Number(params[6] || 2000),
           min_price: Number(params[7] || 3000),
           max_price: Number(params[8] || 3500),
-          pricing_policy: String(params[9] || 'FIXED'),
-          total_stock: Number(params[10] || 15),
-          low_stock_limit: Number(params[11] || 5),
+          total_stock: Number(params[9] || 15),
+          low_stock_limit: Number(params[10] || 5),
           primary_image_url: '',
           description: '',
           active: true,
@@ -1091,7 +1088,6 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
         prod.active = Boolean(params[11] ?? prod.active);
         prod.min_price = Number(params[12] ?? prod.min_price);
         prod.max_price = Number(params[13] ?? prod.max_price);
-        prod.pricing_policy = String(params[14] ?? prod.pricing_policy);
         prod.updated_at = new Date().toISOString();
         return { rows: [prod as unknown as T], rowCount: 1 };
       }

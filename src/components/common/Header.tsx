@@ -633,16 +633,12 @@ export const Header: React.FC<HeaderProps> = ({
 
                         {/* Pricing Grid: Respects Fixed vs Negotiable Policy and Admin vs Cashier Authority */}
                         {(() => {
-                          const rawPricingMode = String(
+                          const rawPricingPolicy = String(
                             prod.pricingPolicy ||
-                            prod.pricing_mode ||
                             companySettings?.pricingPolicy ||
-                            companySettings?.pricing_policy ||
-                            companySettings?.pricing_mode ||
-                            companySettings?.pricingMode ||
                             'FIXED'
                           ).toUpperCase();
-                          const isFixedPolicy = rawPricingMode === 'FIXED';
+                          const isFixedPolicy = rawPricingPolicy === 'FIXED';
                           const isOwnerOrAdmin = String(currentUser?.role || '').toUpperCase() === 'ADMIN';
 
                           const fixedSalePrice = getProductRetailPrice(prod, companySettings) || prod.sellingPrice || prod.maxSalePrice || prod.costPrice || 0;

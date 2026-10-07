@@ -640,8 +640,8 @@ async function ensureProductAndSettingsColumns() {
 
 // Company pricing settings helper
 export async function getCompanyPricingSettings(tenantId: number = 1): Promise<{
-  pricingMode: 'FIXED' | 'NEGOTIABLE';
   pricingPolicy: 'FIXED' | 'NEGOTIABLE';
+  pricingMode?: 'FIXED' | 'NEGOTIABLE';
   pricingPolicyLocked: boolean;
   currencySymbol: string;
 }> {
@@ -654,29 +654,29 @@ export async function getCompanyPricingSettings(tenantId: number = 1): Promise<{
     const row = res.rows[0];
     const mode = String(row?.pricing_mode || 'FIXED').toUpperCase() === 'NEGOTIABLE' ? 'NEGOTIABLE' : 'FIXED';
     return {
-      pricingMode: mode,
       pricingPolicy: mode,
+      pricingMode: mode,
       pricingPolicyLocked: false,
       currencySymbol: row?.currency_symbol || 'Rs.',
     };
   } catch {
     return {
-      pricingMode: 'FIXED',
       pricingPolicy: 'FIXED',
+      pricingMode: 'FIXED',
       pricingPolicyLocked: false,
       currencySymbol: 'Rs.',
     };
   }
 }
 
-function mapProductRow(row: any, settings: { pricingMode: 'FIXED' | 'NEGOTIABLE' }) {
+function mapProductRow(row: any, settings: { pricingPolicy: 'FIXED' | 'NEGOTIABLE'; pricingMode?: 'FIXED' | 'NEGOTIABLE' }) {
   const costPrice = Math.round(parseFloat(row.cost_price) || 0);
   const rawMin = Math.round(Number(row.min_price ?? 0));
   const rawMax = Math.round(Number(row.max_price ?? 0));
 
   const effectivePolicy: 'FIXED' | 'NEGOTIABLE' = row.pricing_policy
     ? (String(row.pricing_policy).toUpperCase() === 'NEGOTIABLE' ? 'NEGOTIABLE' : 'FIXED')
-    : settings.pricingMode;
+    : (settings.pricingPolicy || settings.pricingMode || 'FIXED');
 
   let sellingPrice: number;
   let minPrice: number;
@@ -713,8 +713,6 @@ function mapProductRow(row: any, settings: { pricingMode: 'FIXED' | 'NEGOTIABLE'
     minPrice,
     maxPrice,
     pricingPolicy: effectivePolicy,
-    pricing_policy: effectivePolicy,
-    pricing_mode: effectivePolicy,
     // Backward-compatible aliases for POS / Sticker / Catalog components
     salePrice: sellingPrice,
     minSalePrice: minPrice,

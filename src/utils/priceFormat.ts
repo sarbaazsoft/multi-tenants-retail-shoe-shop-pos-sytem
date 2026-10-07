@@ -67,11 +67,7 @@ export function getProductRetailPrice(product: any, companySettings?: any): numb
 
   const rawPolicy = String(
     companySettings?.pricingPolicy ||
-    companySettings?.pricing_policy ||
-    companySettings?.pricingMode ||
-    companySettings?.pricing_mode ||
     product?.pricingPolicy ||
-    product?.pricing_mode ||
     'FIXED'
   ).toUpperCase();
   const isFixed = rawPolicy === 'FIXED';
@@ -109,11 +105,7 @@ export function getProductMinFloorPrice(product: any, companySettings?: any): nu
 
   const rawPolicy = String(
     companySettings?.pricingPolicy ||
-    companySettings?.pricing_policy ||
-    companySettings?.pricingMode ||
-    companySettings?.pricing_mode ||
     product?.pricingPolicy ||
-    product?.pricing_mode ||
     'FIXED'
   ).toUpperCase();
   const isFixed = rawPolicy === 'FIXED';
@@ -155,9 +147,6 @@ export function getProductRealtimePricing(product: any, companySettings?: any) {
   const minFloorPrice = getProductMinFloorPrice(product, companySettings);
   const rawMode = String(
     companySettings?.pricingPolicy ||
-    companySettings?.pricing_policy ||
-    companySettings?.pricing_mode ||
-    companySettings?.pricingMode ||
     'FIXED'
   ).toUpperCase();
   const isFixed = rawMode === 'FIXED';

@@ -517,9 +517,9 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
       }
       setSuccessMessage(
         res.message ||
-          ((reqItem as any).request_type === 'RENEWAL'
-            ? `Approved subscription renewal for '${reqItem.store_name}'.`
-            : `Approved & provisioned store '${reqItem.store_name}'.`)
+          ((reqItem as any).requestType === 'RENEWAL' || (reqItem as any).request_type === 'RENEWAL'
+            ? `Approved subscription renewal for '${reqItem.storeName}'.`
+            : `Approved & provisioned store '${reqItem.storeName}'.`)
       );
       await loadOverview();
       onTenantsUpdated();
@@ -536,7 +536,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     setSuccessMessage(null);
     try {
       await api.superAdmin.rejectRequest(reqItem.id);
-      setSuccessMessage(`Store request '${reqItem.store_name}' marked as REJECTED.`);
+      setSuccessMessage(`Store request '${reqItem.storeName}' marked as REJECTED.`);
       await loadOverview();
     } catch (err: any) {
       setError(err.message || 'Failed to reject store request.');
@@ -551,7 +551,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     setSuccessMessage(null);
     try {
       await api.superAdmin.updateRequest(reqItem.id, { status: 'PENDING' });
-      setSuccessMessage(`Store request '${reqItem.store_name}' reopened as PENDING.`);
+      setSuccessMessage(`Store request '${reqItem.storeName}' reopened as PENDING.`);
       await loadOverview();
     } catch (err: any) {
       setError(err.message || 'Failed to reopen store request.');
@@ -571,8 +571,8 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
           (r) =>
             r.id !== reqItem.id &&
             !(
-              r.owner_email?.toLowerCase() === reqItem.owner_email?.toLowerCase() &&
-              r.store_name?.toLowerCase() === reqItem.store_name?.toLowerCase()
+              (r.ownerEmail || (r as any).owner_email)?.toLowerCase() === (reqItem.ownerEmail || (reqItem as any).owner_email)?.toLowerCase() &&
+              (r.storeName || (r as any).store_name)?.toLowerCase() === (reqItem.storeName || (reqItem as any).store_name)?.toLowerCase()
             )
         )
       );
@@ -581,7 +581,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
         pendingRequests:
           reqItem.status === 'PENDING' ? Math.max(0, prev.pendingRequests - 1) : prev.pendingRequests,
       }));
-      setSuccessMessage(`Store request for '${reqItem.store_name}' permanently deleted.`);
+      setSuccessMessage(`Store request for '${reqItem.storeName}' permanently deleted.`);
       await loadOverview();
       onTenantsUpdated();
     } catch (err: any) {
@@ -1088,8 +1088,8 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     if (requestStatusFilter !== 'ALL' && r.status !== requestStatusFilter) return false;
     if (!normalizedSearch) return true;
     return (
-      (r.store_name || '').toLowerCase().includes(normalizedSearch) ||
-      (r.owner_email || '').toLowerCase().includes(normalizedSearch)
+      (r.storeName || (r as any).store_name || '').toLowerCase().includes(normalizedSearch) ||
+      (r.ownerEmail || (r as any).owner_email || '').toLowerCase().includes(normalizedSearch)
     );
   });
 
@@ -3503,7 +3503,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                 <td className="py-3.5 px-4">
                                   <div className="w-12 h-12 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-100 dark:bg-[#0A0E1A] overflow-hidden flex items-center justify-center shrink-0 p-1 shadow-2xs">
                                     <div className="w-full h-full rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-black text-xs shadow-2xs">
-                                      {(reqItem.store_name || 'SR').slice(0, 2).toUpperCase()}
+                                      {(reqItem.storeName || (reqItem as any).store_name || 'SR').slice(0, 2).toUpperCase()}
                                     </div>
                                   </div>
                                 </td>
@@ -3511,7 +3511,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                 {/* Requested Store & Type */}
                                 <td className="py-3.5 px-4">
                                   <div className="font-bold text-slate-900 dark:text-white text-sm">
-                                    {reqItem.store_name}
+                                    {reqItem.storeName || (reqItem as any).store_name}
                                   </div>
                                   <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-indigo-50 dark:bg-[#312E81]/60 text-indigo-700 dark:text-[#A5B4FC] border border-indigo-200 dark:border-[#6366F1]/40 font-mono">
@@ -3532,11 +3532,11 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                 {/* Contact Details & Notes */}
                                 <td className="py-3.5 px-3">
                                   <div className="font-mono text-[11px] font-bold text-slate-800 dark:text-white">
-                                    {reqItem.owner_email}
+                                    {reqItem.ownerEmail || (reqItem as any).owner_email}
                                   </div>
-                                  {reqItem.owner_phone && (
+                                  {(reqItem.ownerPhone || (reqItem as any).owner_phone) && (
                                     <div className="text-[10.5px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
-                                      {reqItem.owner_phone}
+                                      {reqItem.ownerPhone || (reqItem as any).owner_phone}
                                     </div>
                                   )}
                                   {(reqItem as any).notes && (

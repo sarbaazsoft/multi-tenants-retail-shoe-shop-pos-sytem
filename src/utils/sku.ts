@@ -263,6 +263,7 @@ export interface SkuComponents {
   brandPrefix: string;
   categoryPrefix?: string;
   article: string;
+  suggestedArticle: string;
   productId: number;
   sku: string;
   barcode: string;
@@ -314,6 +315,7 @@ export function buildSkuInfo(
     brandPrefix,
     categoryPrefix,
     article,
+    suggestedArticle: article,
     productId,
     sku,
     barcode,

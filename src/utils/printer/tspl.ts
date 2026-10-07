@@ -25,12 +25,7 @@ export function generateShoeStickerTspl(
   const sku = String(product.sku || '').substring(0, 18);
   const barcode = String(product.barcode || sku || '00000000');
   const price = formatStockPrice(getProductRetailPrice(product));
-  const rawPolicy = String(
-    product.pricingPolicy ||
-    product.pricing_mode ||
-    product.pricing_policy ||
-    'FIXED'
-  ).toUpperCase();
+  const rawPolicy = String(product.pricingPolicy || 'FIXED').toUpperCase();
   const isFixed = rawPolicy === 'FIXED';
   const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';
 

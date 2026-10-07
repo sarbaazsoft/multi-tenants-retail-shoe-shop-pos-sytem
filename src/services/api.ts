@@ -5,6 +5,7 @@ import {
   lookupCachedProductOffline,
   searchCachedProductsOffline,
 } from '../utils/offlineDb.ts';
+import { transformKeysToCamelCase } from '../utils/caseTransformer.ts';
 
 const TOKEN_KEY = 'pos_auth_token';
 const ALT_TOKEN_KEY = 'shoe_pos_jwt_token';
@@ -266,7 +267,7 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestOption
     throw apiError;
   }
 
-  return data as T;
+  return transformKeysToCamelCase<T>(data);
 }
 
 export const api = {

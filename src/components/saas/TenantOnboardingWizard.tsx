@@ -94,7 +94,7 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
   const [invoicePrefix, setInvoicePrefix] = useState('INV-');
   const [purchasePrefix, setPurchasePrefix] = useState('PUR-');
   const [lowStockLimit, setLowStockLimit] = useState(5);
-  const [pricingMode, setPricingMode] = useState<'FIXED' | 'NEGOTIABLE'>('FIXED');
+  const [pricingPolicy, setPricingPolicy] = useState<'FIXED' | 'NEGOTIABLE'>('FIXED');
   const [currency, setCurrency] = useState('PKR');
   const [taxRate, setTaxRate] = useState<number>(0);
   const [taxId, setTaxId] = useState('');
@@ -134,7 +134,7 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
               'Thank you for shopping with us! Exchanges accepted within 7 days with original receipt.'
           );
           setLowStockLimit(Number(t.lowStockLimit) || 5);
-          setPricingMode(t.pricingMode === 'NEGOTIABLE' ? 'NEGOTIABLE' : 'FIXED');
+          setPricingPolicy(((t as any).pricingPolicy || (t as any).pricingMode) === 'NEGOTIABLE' ? 'NEGOTIABLE' : 'FIXED');
           setThemeColor(t.themeColor || '#7C3AED');
           setBackgroundColor(t.backgroundColor || '#0F172A');
           setLogoUrl(t.logoUrl || '/pwa-512x512.png');
@@ -220,7 +220,7 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
         purchasePrefix: purchasePrefix.trim(),
         invoiceFooter: toTitleCaseTrimmed(invoiceFooter),
         lowStockLimit,
-        pricingMode,
+        pricingPolicy,
         themeColor,
         backgroundColor,
         logoUrl,
@@ -348,7 +348,7 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                     <Lock className="w-3.5 h-3.5 text-amber-500" />
                   </div>
                   <div className="text-xs font-bold text-slate-900 dark:text-white">
-                    {pricingMode === 'NEGOTIABLE'
+                    {pricingPolicy === 'NEGOTIABLE'
                       ? 'Negotiable Price Policy (NEGOTIABLE)'
                       : 'Fixed Retail Price Policy (FIXED)'}
                   </div>
@@ -926,12 +926,12 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
 
                         <div>
                           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            Counter Pricing Mode
+                            Counter Pricing Policy
                           </label>
                           <select
-                            value={pricingMode}
+                            value={pricingPolicy}
                             onChange={(e) =>
-                              setPricingMode(e.target.value === 'NEGOTIABLE' ? 'NEGOTIABLE' : 'FIXED')
+                              setPricingPolicy(e.target.value === 'NEGOTIABLE' ? 'NEGOTIABLE' : 'FIXED')
                             }
                             className="app-input capitalize w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-purple-800/60 text-slate-900 dark:text-white text-sm"
                           >

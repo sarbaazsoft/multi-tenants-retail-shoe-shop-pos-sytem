@@ -281,12 +281,7 @@ export const BarcodeGeneratorTool: React.FC<BarcodeGeneratorToolProps> = ({
 
   const rawPolicy = String(
     companySettings?.pricingPolicy ||
-    companySettings?.pricing_policy ||
-    companySettings?.pricingMode ||
-    companySettings?.pricing_mode ||
     previewProduct?.pricingPolicy ||
-    previewProduct?.pricing_mode ||
-    previewProduct?.pricing_policy ||
     'FIXED'
   ).toUpperCase();
   const isFixedPolicy = rawPolicy === 'FIXED';

@@ -125,13 +125,16 @@ export interface SuperAdminReportBreakdown {
 
 export interface StoreRequestRecord {
   id: number;
-  store_name: string;
-  owner_email: string;
-  owner_phone: string;
+  storeName: string;
+  ownerEmail: string;
+  ownerPhone: string;
   plan: string;
-  provisioned_tenant_id?: number | null;
+  requestType?: string;
+  notes?: string;
+  provisionedTenantId?: number | null;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  created_at: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export type PricingPolicy = 'FIXED' | 'NEGOTIABLE';
@@ -145,67 +148,45 @@ export interface CompanySettings {
   subscriptionEndDate?: string;
   subscriptionStatus?: SubscriptionStatus;
   name: string;
-  companyName?: string;
-  company_name?: string;
   logo: string;
   showReceiptLogo?: boolean;
-  show_receipt_logo?: boolean;
   receiptLogo?: string;
-  receipt_logo?: string;
   address: string;
-  companyAddress?: string;
-  company_address?: string;
   phone: string;
-  companyPhone?: string;
-  company_phone?: string;
   email: string;
-  companyEmail?: string;
-  company_email?: string;
   website: string;
   strn: string;
   taxId: string;
-  tax_id?: string;
-  taxNumber: string;
   taxRate?: number;
-  tax_rate?: number;
   currency: string;
   currencyName: string;
-  currency_name?: string;
   currencySymbol: string;
-  currency_symbol?: string;
   themeColor?: string;
-  theme_color?: string;
+  backgroundColor?: string;
   invoicePrefix: string;
-  invoice_prefix?: string;
   purchasePrefix: string;
-  purchase_prefix?: string;
   barcodePrefix: string;
-  barcode_prefix?: string;
   invoiceFooter: string;
-  invoice_footer?: string;
   lowStockLimit: number;
-  pricingPolicy?: PricingPolicy;
-  pricing_policy?: PricingPolicy;
-  pricingMode?: PricingPolicy;
-  pricing_mode?: PricingPolicy;
-  pricingPolicyLocked?: boolean;
-  pricing_policy_locked?: boolean;
+  pricingPolicy: PricingPolicy;
+  pricingPolicyLocked: boolean;
   isInstalled?: boolean;
-  is_installed?: boolean;
   updatedAt: string;
 }
 
 export interface Brand {
+  id?: number;
   name: string;
   logo?: string;
-  product_count?: number;
-  total_units?: number;
+  productCount?: number;
+  totalUnits?: number;
 }
 
 export interface Category {
+  id?: number;
   name: string;
-  product_count?: number;
-  total_units?: number;
+  productCount?: number;
+  totalUnits?: number;
 }
 
 export type AiConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
@@ -248,22 +229,12 @@ export interface Product {
   primaryImageUrl: string;
   description?: string;
   costPrice: number;
-  cost_price?: number;
   sellingPrice: number;
-  selling_price?: number;
   minPrice: number;
-  min_price?: number;
   maxPrice: number;
-  max_price?: number;
-  pricingPolicy?: PricingPolicy;
-  pricing_policy?: PricingPolicy;
-  pricing_mode?: PricingPolicy;
   salePrice?: number | null;
-  sale_price?: number | null;
   minSalePrice?: number | null;
-  min_sale_price?: number | null;
   maxSalePrice?: number | null;
-  max_sale_price?: number | null;
   totalStock: number;
   lowStockLimit: number;
   active: boolean;
@@ -280,14 +251,10 @@ export interface Customer {
   address?: string;
   notes?: string;
   totalPurchases?: number;
-  total_orders?: number;
   totalOrders?: number;
-  total_spent?: number | string;
   totalSpent?: number;
-  loyalty_points?: number;
   loyaltyPoints?: number;
   balance?: number | string;
-  last_visit?: string | null;
   lastVisit?: string | null;
   createdAt: string;
 }
@@ -298,10 +265,7 @@ export interface Supplier {
   phone?: string;
   email?: string;
   balance?: number | string;
-  net_payable_balance?: number | string;
-  total_purchases?: number;
   totalPurchases?: number;
-  total_purchased_amount?: number | string;
   totalPurchasedAmount?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -318,7 +282,6 @@ export interface CartItem {
   barcode: string;
   quantity: number;
   unitPrice: number;
-  pricingPolicy?: 'FIXED' | 'NEGOTIABLE';
   sellingPrice?: number;
   minPrice?: number;
   maxPrice?: number;

@@ -197,7 +197,6 @@ const DATABASE_TABLE_DDL: string[] = [
     cost_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     min_price INTEGER NOT NULL DEFAULT 0,
     max_price INTEGER NOT NULL DEFAULT 0,
-    pricing_policy TEXT DEFAULT NULL,
     total_stock INTEGER NOT NULL DEFAULT 0,
     low_stock_limit INTEGER NOT NULL DEFAULT 5,
     active BOOLEAN NOT NULL DEFAULT true,
@@ -412,6 +411,14 @@ export async function ensureDatabaseSchema(): Promise<void> {
       for (const ddl of DATABASE_TABLE_DDL) {
         await pgClient.exec(ddl);
       }
+
+      // 1b. Ensure deprecated slug/subdomain columns are permanently removed if present from earlier versions
+      await pgClient.exec(`
+        ALTER TABLE tenants DROP COLUMN IF EXISTS slug;
+        ALTER TABLE tenants DROP COLUMN IF EXISTS subdomain;
+        ALTER TABLE tenants DROP COLUMN IF EXISTS sub_domain;
+        ALTER TABLE products DROP COLUMN IF EXISTS pricing_policy;
+      `).catch(() => {});
 
       // 2. Create all indexes independently so an index notice never aborts table creation
       for (const idxDdl of DATABASE_INDEX_DDL) {

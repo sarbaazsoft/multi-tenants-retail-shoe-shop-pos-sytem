@@ -35,12 +35,22 @@ import inventoryRoutes from './src/server/routes/inventoryRoutes.ts';
 import notificationRoutes from './src/server/routes/notificationRoutes.ts';
 import chatRoutes from './src/server/routes/chatRoutes.ts';
 import tenantSaasRoutes from './src/server/routes/tenantSaasRoutes.ts';
+import { transformKeysToCamelCase } from './src/utils/caseTransformer.ts';
 
 const rootDir = path.resolve('.');
 
 export const app = express();
 const configuredPort = Number(process.env.PORT);
 const PORT = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 3000;
+
+// Universal API Response Transformer to map database rows (snake_case) to strict camelCase
+app.use('/api', (_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body: any) => {
+    return originalJson(transformKeysToCamelCase(body));
+  };
+  next();
+});
 
 // Increase body size limit for JSON and URL-encoded payloads (e.g., base64 images & CSV imports)
 app.use(express.json({ limit: '50mb', strict: false }));
