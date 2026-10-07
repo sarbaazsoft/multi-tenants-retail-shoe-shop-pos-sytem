@@ -118,7 +118,49 @@ export async function sendPasswordResetEmail(
   const html = buildResetEmailHtml(opts);
   const text = buildResetEmailText(opts);
 
-  // 1. Primary Transport: Resend API (delivers directly to real Gmail/external inboxes over HTTPS)
+  // 1. Real SMTP / Gmail Transport (runs first when non-Ethereal SMTP or GMAIL_USER + GMAIL_APP_PASSWORD is provided)
+  const smtpHost = (process.env.SMTP_HOST || (process.env.GMAIL_USER ? 'smtp.gmail.com' : '')).trim();
+  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim();
+  const rawSmtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').trim();
+  const isGmailHost = /gmail\.com/i.test(smtpHost) || /@gmail\.com$/i.test(smtpUser);
+  // Google 16-character App Passwords are often copied with spaces ("xxxx xxxx xxxx xxxx"); strip spaces for Gmail
+  const smtpPass = isGmailHost ? rawSmtpPass.replace(/\s+/g, '') : rawSmtpPass;
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpSecure =
+    String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
+  const isEtherealHost = /ethereal\.email/i.test(smtpHost) || /ethereal\.email/i.test(smtpUser);
+
+  if (smtpHost && smtpUser && smtpPass && !isEtherealHost) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpSecure,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from: isGmailHost ? `"ShoePOS Security" <${smtpUser}>` : fromAddress,
+        to: opts.to,
+        subject,
+        text,
+        html,
+      });
+
+      return {
+        delivered: true,
+        provider: 'smtp',
+        messageId: info.messageId,
+      };
+    } catch (smtpErr: any) {
+      console.warn('SMTP/Gmail send warning, falling back to Resend/secondary transport:', smtpErr?.message || smtpErr);
+    }
+  }
+
+  // 2. Resend API Transport (delivers directly over HTTPS)
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
   if (resendApiKey) {
     // Resend requires a verified custom domain or onboarding@resend.dev (cannot send from @gmail.com/@yahoo.com/@ethereal.email)
@@ -194,45 +236,6 @@ export async function sendPasswordResetEmail(
       console.warn('Resend API response notice:', resp.status, errText);
     } catch (resendErr: any) {
       console.warn('Resend API warning:', resendErr?.message || resendErr);
-    }
-  }
-
-  // 2. Real SMTP Transport (skip Ethereal sandbox hosts here so they are handled with preview URLs below)
-  const smtpHost = (process.env.SMTP_HOST || (process.env.GMAIL_USER ? 'smtp.gmail.com' : '')).trim();
-  const smtpUser = (process.env.SMTP_USER || process.env.GMAIL_USER || '').trim();
-  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').trim();
-  const smtpPort = Number(process.env.SMTP_PORT || 587);
-  const smtpSecure =
-    String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
-  const isEtherealHost = /ethereal\.email/i.test(smtpHost) || /ethereal\.email/i.test(smtpUser);
-
-  if (smtpHost && smtpUser && smtpPass && !isEtherealHost) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpSecure,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-      });
-
-      const info = await transporter.sendMail({
-        from: fromAddress,
-        to: opts.to,
-        subject,
-        text,
-        html,
-      });
-
-      return {
-        delivered: true,
-        provider: 'smtp',
-        messageId: info.messageId,
-      };
-    } catch (smtpErr: any) {
-      console.warn('SMTP send warning, falling back to secondary transport:', smtpErr?.message || smtpErr);
     }
   }
 

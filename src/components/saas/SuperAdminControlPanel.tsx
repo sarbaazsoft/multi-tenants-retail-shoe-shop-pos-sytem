@@ -80,8 +80,8 @@ interface SuperAdminControlPanelProps {
   currentUser: User | null;
   onUserAuthenticated: (user: User, token: string) => void;
   onLogout: () => void;
-  onOpenStore: (slug: string) => void;
-  onOpenOnboarding: (slug: string) => void;
+  onOpenStore: (tenantId: number) => void;
+  onOpenOnboarding: (tenantId: number) => void;
   onTenantsUpdated: () => void;
 }
 
@@ -183,8 +183,8 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
 
   // Newly provisioned credentials banner
   const [provisionedBanner, setProvisionedBanner] = useState<{
+    tenantId: number;
     storeName: string;
-    slug: string;
     adminEmail: string;
     initialPassword: string;
     subscriptionPlan?: string;
@@ -315,10 +315,10 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
     setAuthInfo(null);
     try {
       const res = await api.auth.forgotPassword({ email: email.trim() });
-      setResetToken(res.resetToken || '');
+      setResetToken('');
       setAuthInfo(
         res.message ||
-          'Password reset token and link have been sent to your email. Enter your new password below.'
+          'Password reset token and link have been sent to your email. Please check your inbox and enter the verification token below.'
       );
       setAuthTab('reset');
     } catch (err: any) {
@@ -571,7 +571,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
           (r) =>
             r.id !== reqItem.id &&
             !(
-              r.requested_slug?.toLowerCase() === reqItem.requested_slug?.toLowerCase() &&
+              r.owner_email?.toLowerCase() === reqItem.owner_email?.toLowerCase() &&
               r.store_name?.toLowerCase() === reqItem.store_name?.toLowerCase()
             )
         )
@@ -1371,7 +1371,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                     key={st.id}
                     type="button"
                     onClick={() => {
-                      onOpenStore(st.slug);
+                      onOpenStore(st.id);
                       if (isMobile) setMobileMenuOpen(false);
                     }}
                     className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 hover:bg-slate-100/80 dark:hover:bg-white/5 transition cursor-pointer group"
@@ -1802,7 +1802,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                   <div className="flex flex-wrap items-center gap-2.5">
                     <button
                       type="button"
-                      onClick={() => onOpenOnboarding(provisionedBanner.slug)}
+                      onClick={() => onOpenOnboarding(provisionedBanner.tenantId)}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition cursor-pointer"
                     >
                       <Wand2 className="w-4 h-4" />
@@ -1810,7 +1810,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onOpenStore(provisionedBanner.slug)}
+                      onClick={() => onOpenStore(provisionedBanner.tenantId)}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 text-xs font-bold transition cursor-pointer"
                     >
                       <Store className="w-4 h-4" />
@@ -1916,7 +1916,6 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                 return {
                   id: st.id,
                   name: st.name,
-                  slug: st.slug,
                   themeColor: st.themeColor || (idx === 0 ? '#3B82F6' : '#8B5CF6'),
                   pct,
                   subtitle:
@@ -2433,7 +2432,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                             return (
                               <div
                                 key={st.id}
-                                onClick={() => onOpenStore(st.slug)}
+                                onClick={() => onOpenStore(st.id)}
                                 className="flex flex-col items-center text-center min-w-0 cursor-pointer group"
                               >
                                 <div className="relative w-20 h-20 sm:w-24 sm:h-24 max-w-full flex items-center justify-center shrink-0">
@@ -2556,7 +2555,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                           {reportSkus.slice(0, 3).map((prod, idx) => (
                             <div
                               key={`${prod.tenantId}-${prod.id}-${idx}`}
-                              onClick={() => onOpenStore(prod.storeSlug)}
+                              onClick={() => onOpenStore(prod.tenantId)}
                               className="flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition min-w-0 cursor-pointer"
                             >
                               <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
@@ -2640,7 +2639,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                             return (
                               <div
                                 key={st.id}
-                                onClick={() => onOpenStore(st.slug)}
+                                onClick={() => onOpenStore(st.id)}
                                 className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-500/40 transition cursor-pointer"
                               >
                                 <div className="flex items-center justify-between text-xs mb-1.5">
@@ -3301,7 +3300,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                     {/* 4. Initial Store Setup / Onboarding */}
                                     <button
                                       type="button"
-                                      onClick={() => onOpenOnboarding(store.slug)}
+                                      onClick={() => onOpenOnboarding(store.id)}
                                       className="p-1.5 rounded-xl border border-purple-200 dark:border-purple-500/30 bg-purple-50/80 dark:bg-[#0E1628] hover:bg-purple-600 dark:hover:bg-purple-600 text-purple-600 dark:text-purple-400 hover:text-white dark:hover:text-white transition-all shadow-2xs group relative cursor-pointer"
                                       title={
                                         store.onboardingCompleted
@@ -3329,7 +3328,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                     {/* 6. Open Store POS */}
                                     <button
                                       type="button"
-                                      onClick={() => onOpenStore(store.slug)}
+                                      onClick={() => onOpenStore(store.id)}
                                       className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-700 hover:via-indigo-700 hover:to-purple-800 text-white border border-purple-400/40 dark:border-purple-400/50 shadow-2xs dark:shadow-[0_0_12px_rgba(147,51,234,0.25)] text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95"
                                     >
                                       <span>Open POS</span>
@@ -3639,7 +3638,11 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                                     {reqItem.status === 'APPROVED' && (
                                       <button
                                         type="button"
-                                        onClick={() => onOpenStore(reqItem.requested_slug)}
+                                        onClick={() => {
+                                          if (reqItem.provisioned_tenant_id) {
+                                            onOpenStore(reqItem.provisioned_tenant_id);
+                                          }
+                                        }}
                                         className="px-2.5 py-1.5 rounded-xl border border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-[#0E1628] text-purple-700 dark:text-purple-400 hover:bg-purple-600 dark:hover:bg-purple-600 hover:text-white dark:hover:text-white transition-all shadow-2xs group relative cursor-pointer flex items-center gap-1 text-[11px] font-bold"
                                       >
                                         <Store className="w-3.5 h-3.5" />

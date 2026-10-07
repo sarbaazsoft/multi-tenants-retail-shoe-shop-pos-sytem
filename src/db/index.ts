@@ -44,7 +44,6 @@ const mockStore: Record<string, any[]> = {
     {
       id: 1,
       name: 'StepSync Footwear',
-      slug: 'stepsync',
       status: 'ACTIVE',
       subscription_plan: 'YEARLY',
       subscription_start_date: new Date(Date.now() - 86400000 * 30).toISOString(),
@@ -170,8 +169,8 @@ const mockStore: Record<string, any[]> = {
   stock_movements: [],
   store_requests: [],
   deleted_store_requests: [
-    { id: 1, request_id: 0, requested_slug: '__schema_v6_talhah_ready__', deleted_at: new Date().toISOString() },
-    { id: 2, request_id: 0, requested_slug: '__seeded_stores_and_requests_removed_v1__', deleted_at: new Date().toISOString() },
+    { id: 1, request_id: 0, marker_key: '__schema_v6_talhah_ready__', deleted_at: new Date().toISOString() },
+    { id: 2, request_id: 0, marker_key: '__seeded_stores_and_requests_removed_v1__', deleted_at: new Date().toISOString() },
   ],
 };
 
@@ -279,29 +278,20 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
       const entry = {
         id: nextMockId('deleted_store_requests'),
         request_id: Number(params[0] || 0),
-        requested_slug: String(params[1] || ''),
+        marker_key: String(params[1] || ''),
         deleted_at: new Date().toISOString(),
       };
       mockStore.deleted_store_requests.push(entry);
       return { rows: [entry as unknown as T], rowCount: 1 };
     }
     if (upper.startsWith('DELETE FROM DELETED_STORE_REQUESTS')) {
-      const slug = String(params[0] || '').toLowerCase();
+      const targetMarker = String(params[0] || '').toLowerCase();
       mockStore.deleted_store_requests = mockStore.deleted_store_requests.filter(
-        (d) => String(d.requested_slug || '').toLowerCase() !== slug
+        (d) => String(d.marker_key || '').toLowerCase() !== targetMarker && Number(d.request_id) !== Number(params[0])
       );
       return { rows: [], rowCount: 1 };
     }
     return { rows: [], rowCount: 0 };
-  }
-
-  // Slug uniqueness check across tenants UNION ALL store_requests
-  if (upper.includes('FROM TENANTS') && upper.includes('UNION ALL') && upper.includes('FROM STORE_REQUESTS')) {
-    const candidate = String(params[0] || '').toLowerCase();
-    const found =
-      mockStore.tenants.some((t) => String(t.slug).toLowerCase() === candidate) ||
-      mockStore.store_requests.some((r) => String(r.requested_slug).toLowerCase() === candidate);
-    return { rows: found ? ([{ '?column?': 1 }] as unknown as T[]) : [], rowCount: found ? 1 : 0 };
   }
 
   // SuperAdmin & Store report queries joining products + tenants
@@ -362,7 +352,6 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
           id: p.id,
           tenant_id: p.tenant_id,
           store_name: t?.name || 'StepSync Footwear',
-          store_slug: t?.slug || 'stepsync',
           currency: cs?.currency || 'PKR',
           product_name: p.article || p.name || 'Shoe Item',
           name: p.name || 'Shoe Item',
@@ -416,12 +405,11 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
       return {
         ...t,
         name: t.name || cs?.name || 'StepSync Footwear',
-        slug: t.slug || 'stepsync',
         admin_user_id: owner?.id || null,
         owner_name: owner?.name || 'Store Owner',
         admin_name: owner?.name || 'Store Owner',
-        owner_email: owner?.email || cs?.email || `admin@${t.slug || 'store'}.com`,
-        admin_email: owner?.email || cs?.email || `admin@${t.slug || 'store'}.com`,
+        owner_email: owner?.email || cs?.email || `admin+${t.id}@store.com`,
+        admin_email: owner?.email || cs?.email || `admin+${t.id}@store.com`,
         owner_phone: owner?.phone || cs?.phone || '',
         admin_phone: owner?.phone || cs?.phone || '',
         logo_url: cs?.logo || t.logo_url || '/pwa-512x512.png',
@@ -447,21 +435,19 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
       rows = rows.filter(
         (r) =>
           (params[0] !== null && params[0] !== undefined && Number(r.id) === Number(params[0])) ||
-          String(r.slug).toLowerCase() === String(params[1] || '').toLowerCase()
+          String(r.name).toLowerCase() === String(params[1] || '').toLowerCase()
       );
     } else if (upper.includes('WHERE ID = ANY($1')) {
       const ids: number[] = Array.isArray(params[0]) ? params[0].map(Number) : [];
       rows = rows.filter((r) => ids.includes(Number(r.id)));
     } else if (upper.includes('WHERE T.ID = $1') || upper.includes('WHERE ID = $1')) {
       rows = rows.filter((r) => Number(r.id) === Number(params[0]));
-    } else if (upper.includes('LOWER(SLUG) = LOWER($1)') || upper.includes('LOWER(SLUG) = $1')) {
-      rows = rows.filter((r) => String(r.slug).toLowerCase() === String(params[0] || '').toLowerCase());
     }
     return { rows: rows as unknown as T[], rowCount: rows.length };
   }
 
   if (upper.startsWith('INSERT INTO TENANTS')) {
-    const hasExplicitId = params.length >= 8;
+    const hasExplicitId = params.length >= 7;
     const usedIds = new Set(mockStore.tenants.map((t) => Number(t.id)));
     let recycledId = 1;
     while (usedIds.has(recycledId)) {
@@ -469,14 +455,13 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
     }
     const newTenant = {
       id: hasExplicitId ? Number(params[0]) || recycledId : recycledId,
-      slug: String((hasExplicitId ? params[1] : params[0]) || 'store').trim().toLowerCase(),
-      name: String((hasExplicitId ? params[2] : params[1]) || 'New Shoe Store').trim(),
+      name: String((hasExplicitId ? params[1] : params[0]) || 'New Shoe Store').trim(),
       status: 'ACTIVE',
-      subscription_plan: String((hasExplicitId ? params[3] : params[2]) || 'YEARLY'),
-      subscription_start_date: (hasExplicitId ? params[4] : params[3]) || new Date().toISOString(),
-      subscription_end_date: (hasExplicitId ? params[5] : params[4]) || new Date(Date.now() + 86400000 * 365).toISOString(),
-      subscription_status: String((hasExplicitId ? params[6] : params[5]) || 'ACTIVE'),
-      theme_color: String((hasExplicitId ? params[7] : params[6]) || '#7C3AED'),
+      subscription_plan: String((hasExplicitId ? params[2] : params[1]) || 'YEARLY'),
+      subscription_start_date: (hasExplicitId ? params[3] : params[2]) || new Date().toISOString(),
+      subscription_end_date: (hasExplicitId ? params[4] : params[3]) || new Date(Date.now() + 86400000 * 365).toISOString(),
+      subscription_status: String((hasExplicitId ? params[5] : params[4]) || 'ACTIVE'),
+      theme_color: String((hasExplicitId ? params[6] : params[5]) || '#7C3AED'),
       background_color: '#0F172A',
       logo_url: '/pwa-512x512.png',
       address: '',
@@ -577,13 +562,19 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
     let rows = [...mockStore.store_requests];
     if (upper.includes('WHERE ID = $1')) {
       rows = rows.filter((r) => Number(r.id) === Number(params[0]));
+    } else if (upper.includes('LOWER(BTRIM(OWNER_EMAIL)) = LOWER(BTRIM($1))')) {
+      const targetEmail = String(params[0] || '').trim().toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          String(r.owner_email || '').trim().toLowerCase() === targetEmail &&
+          (!upper.includes("STATUS = 'PENDING'") || r.status === 'PENDING')
+      );
     } else if (upper.includes("WHERE STATUS = 'PENDING'")) {
       const tid = Number(params[0] || 0);
-      const slug = String(params[1] || '').toLowerCase();
       rows = rows.filter(
         (r) =>
           r.status === 'PENDING' &&
-          (Number(r.provisioned_tenant_id) === tid || (slug && String(r.requested_slug || '').toLowerCase() === slug))
+          Number(r.provisioned_tenant_id) === tid
       );
     }
     return { rows: rows as unknown as T[], rowCount: rows.length };
@@ -593,13 +584,12 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
     const newReq = {
       id: nextMockId('store_requests'),
       store_name: String(params[0] || '').trim(),
-      requested_slug: String(params[1] || '').trim(),
-      owner_email: String(params[2] || '').trim().toLowerCase(),
-      owner_phone: String(params[3] || '').trim(),
-      plan: String(params[4] || 'YEARLY').trim(),
+      owner_email: String(params[1] || '').trim().toLowerCase(),
+      owner_phone: String(params[2] || '').trim(),
+      plan: String(params[3] || 'YEARLY').trim(),
       request_type: upper.includes("'RENEWAL'") ? 'RENEWAL' : 'NEW_STORE',
-      notes: params.length > 5 ? String(params[5] || '') : '',
-      provisioned_tenant_id: params.length > 6 ? Number(params[6]) || null : null,
+      notes: params.length > 4 ? String(params[4] || '') : '',
+      provisioned_tenant_id: params.length > 5 ? Number(params[5]) || null : null,
       status: 'PENDING',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -618,10 +608,6 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
     } else if (upper.includes("SET STATUS = 'APPROVED'") && params.length === 2) {
       reqRow.status = 'APPROVED';
       reqRow.provisioned_tenant_id = Number(params[0]);
-    } else if (upper.includes("SET STATUS = 'APPROVED'") && params.length === 3) {
-      reqRow.status = 'APPROVED';
-      reqRow.requested_slug = String(params[0] || reqRow.requested_slug);
-      reqRow.provisioned_tenant_id = Number(params[1]);
     } else if (params.length >= 6) {
       reqRow.status = String(params[0] || reqRow.status);
       reqRow.store_name = String(params[1] || reqRow.store_name);
@@ -784,11 +770,24 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
   }
 
   if (upper.startsWith('INSERT INTO USERS')) {
+    const candidateEmail = String(params[2] || 'user@example.com').trim().toLowerCase();
+    const duplicate = mockStore.users.find(
+      (u) => String(u.email || '').trim().toLowerCase() === candidateEmail
+    );
+    if (duplicate) {
+      if (upper.includes('ON CONFLICT')) {
+        return { rows: [], rowCount: 0 };
+      }
+      const dupErr: any = new Error('duplicate key value violates unique constraint "users_email_key"');
+      dupErr.code = '23505';
+      dupErr.constraint = 'users_email_key';
+      throw dupErr;
+    }
     const newUser = {
       id: nextMockId('users'),
       tenant_id: Number(params[0]) || 1,
       name: String(params[1] || 'User').trim(),
-      email: String(params[2] || 'user@example.com').trim().toLowerCase(),
+      email: candidateEmail,
       phone: params.length > 4 ? String(params[3] || '').trim() : '',
       avatar_url: '',
       password_hash: params.length > 4 ? params[4] : params[2],
@@ -829,7 +828,19 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
       const uid = Number(params[2]);
       const u = mockStore.users.find((x) => Number(x.id) === uid);
       if (u) {
-        if (params[0]) u.email = String(params[0]).toLowerCase();
+        if (params[0]) {
+          const nextEmail = String(params[0]).trim().toLowerCase();
+          const dup = mockStore.users.find(
+            (x) => Number(x.id) !== uid && String(x.email || '').trim().toLowerCase() === nextEmail
+          );
+          if (dup) {
+            const dupErr: any = new Error('duplicate key value violates unique constraint "users_email_key"');
+            dupErr.code = '23505';
+            dupErr.constraint = 'users_email_key';
+            throw dupErr;
+          }
+          u.email = nextEmail;
+        }
         u.phone = String(params[1] ?? u.phone);
       }
       return { rows: u ? ([u] as unknown as T[]) : [], rowCount: u ? 1 : 0 };
@@ -840,8 +851,21 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
       return { rows: u ? ([u] as unknown as T[]) : [], rowCount: u ? 1 : 0 };
     }
     if (upper.includes('SET EMAIL = $1 WHERE ID = $2')) {
-      const u = mockStore.users.find((x) => Number(x.id) === Number(params[1]));
-      if (u) u.email = String(params[0]).toLowerCase();
+      const uid = Number(params[1]);
+      const u = mockStore.users.find((x) => Number(x.id) === uid);
+      if (u) {
+        const nextEmail = String(params[0] || '').trim().toLowerCase();
+        const dup = mockStore.users.find(
+          (x) => Number(x.id) !== uid && String(x.email || '').trim().toLowerCase() === nextEmail
+        );
+        if (dup) {
+          const dupErr: any = new Error('duplicate key value violates unique constraint "users_email_key"');
+          dupErr.code = '23505';
+          dupErr.constraint = 'users_email_key';
+          throw dupErr;
+        }
+        u.email = nextEmail;
+      }
       return { rows: u ? ([u] as unknown as T[]) : [], rowCount: u ? 1 : 0 };
     }
     if (upper.includes('SET PHONE = $1 WHERE ID = $2')) {

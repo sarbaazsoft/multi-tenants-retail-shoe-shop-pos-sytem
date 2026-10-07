@@ -20,36 +20,6 @@ import {
 
 const router = Router();
 
-function normalizeStoreSlug(value: string): string {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  const safeValue = normalized || 'store';
-  return ['admin', 'api', 'www', 'app', 'root', 'mail', 'support', 'billing'].includes(safeValue)
-    ? `store-${safeValue}`
-    : safeValue;
-}
-
-/** Internal route identifiers are generated from the store name, never entered by users. */
-async function generateUniqueStoreSlug(storeName: string): Promise<string> {
-  const baseSlug = normalizeStoreSlug(storeName);
-  for (let suffix = 1; suffix <= 10000; suffix += 1) {
-    const candidate = suffix === 1 ? baseSlug : `${baseSlug}-${suffix}`;
-    const existing = await pgClient.query(
-      `SELECT 1 FROM tenants WHERE LOWER(slug) = LOWER($1)
-       UNION ALL
-       SELECT 1 FROM store_requests WHERE LOWER(requested_slug) = LOWER($1)
-       LIMIT 1`,
-      [candidate]
-    );
-    if (existing.rows.length === 0) return candidate;
-  }
-  throw new Error('Could not generate a unique internal store identifier.');
-}
-
 /**
  * 1. DYNAMIC STORE PWA MANIFEST (`/api/tenants/manifest?tenantId=...`)
  * Generates a separate PWA manifest for each store.
@@ -65,14 +35,13 @@ router.get('/tenants/manifest', async (req: Request, res: Response) => {
 
     const tenantRes = await pgClient.query<{
       id: number;
-      slug: string;
       name: string;
       status: string;
       theme_color: string;
       background_color: string;
       logo_url: string;
     }>(
-      `SELECT t.id, t.slug, t.name, t.status, t.theme_color, t.background_color,
+      `SELECT t.id, t.name, t.status, t.theme_color, t.background_color,
               COALESCE(NULLIF(cs.logo, ''), '/pwa-512x512.png') AS logo_url
        FROM tenants t
        LEFT JOIN company_settings cs ON cs.tenant_id = t.id
@@ -180,7 +149,6 @@ router.get('/saas/resolve', async (req: Request, res: Response) => {
 
     const directoryRes = await pgClient.query<{
       id: number;
-      slug: string;
       name: string;
       status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
       subscription_plan: string;
@@ -193,7 +161,7 @@ router.get('/saas/resolve', async (req: Request, res: Response) => {
       currency: string;
       onboarding_completed: boolean;
     }>(
-      `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
+      `SELECT t.id, t.name, t.status, t.subscription_plan,
               t.subscription_start_date, t.subscription_end_date, t.subscription_status,
               t.theme_color, t.background_color, t.onboarding_completed,
               COALESCE(NULLIF(cs.logo, ''), '/pwa-512x512.png') AS logo_url,
@@ -207,7 +175,6 @@ router.get('/saas/resolve', async (req: Request, res: Response) => {
       resolution,
       availableTenants: directoryRes.rows.map((t) => ({
         id: t.id,
-        slug: t.slug,
         name: t.name,
         status: t.status,
         subscriptionPlan: t.subscription_plan || 'YEARLY',
@@ -257,6 +224,75 @@ router.get('/saas/public-stats', async (_req: Request, res: Response) => {
 });
 
 /**
+ * 2B. REAL-TIME EMAIL AVAILABILITY CHECK (`/api/saas/check-email?email=...`)
+ * Validates email format and checks whether the email is already registered in `users`
+ * or has an active `PENDING` store request in `store_requests`.
+ */
+router.get('/saas/check-email', async (req: Request, res: Response) => {
+  try {
+    await ensureSaasControlPlane();
+    const rawEmail = String(req.query.email || '').trim().toLowerCase();
+    if (!rawEmail) {
+      return res.json({
+        available: false,
+        validFormat: false,
+        reason: 'EMPTY',
+        message: 'Email address is required.',
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!emailRegex.test(rawEmail)) {
+      return res.json({
+        available: false,
+        validFormat: false,
+        reason: 'INVALID_FORMAT',
+        message: 'Please enter a valid email address (e.g. owner@metroshoes.pk).',
+      });
+    }
+
+    const existingUser = await pgClient.query<{ id: number }>(
+      'SELECT id FROM users WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1)) LIMIT 1',
+      [rawEmail]
+    );
+    if (existingUser.rows.length > 0) {
+      return res.json({
+        available: false,
+        validFormat: true,
+        reason: 'EMAIL_ALREADY_EXISTS',
+        message: 'This email is already in use. Please use a different email address.',
+      });
+    }
+
+    const pendingRequest = await pgClient.query<{ id: number }>(
+      "SELECT id FROM store_requests WHERE LOWER(BTRIM(owner_email)) = LOWER(BTRIM($1)) AND status = 'PENDING' LIMIT 1",
+      [rawEmail]
+    );
+    if (pendingRequest.rows.length > 0) {
+      return res.json({
+        available: false,
+        validFormat: true,
+        reason: 'PENDING_REQUEST_EXISTS',
+        message: 'A pending store request already exists for this email address.',
+      });
+    }
+
+    return res.json({
+      available: true,
+      validFormat: true,
+      reason: 'AVAILABLE',
+      message: 'Email is available.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      available: false,
+      validFormat: false,
+      error: 'Failed to check email availability: ' + err.message,
+    });
+  }
+});
+
+/**
  * 3. PUBLIC LANDING PAGE: SUBMIT STORE REQUEST / FREE TRIAL (`/api/saas/store-requests`)
  */
 router.post('/saas/store-requests', async (req: Request, res: Response) => {
@@ -264,15 +300,48 @@ router.post('/saas/store-requests', async (req: Request, res: Response) => {
     await ensureSaasControlPlane();
     const { storeName, ownerEmail, ownerPhone, plan } = req.body || {};
 
-    if (!storeName || !ownerEmail) {
+    const cleanStoreName = String(storeName || '').trim();
+    const cleanOwnerEmail = String(ownerEmail || '').trim().toLowerCase();
+    const cleanOwnerPhone = String(ownerPhone || '').trim();
+
+    if (!cleanStoreName || !cleanOwnerEmail) {
       return res.status(400).json({
-        error: 'Store name and email are required.',
+        error: 'Store name and owner email are required.',
+      });
+    }
+
+    if (cleanStoreName.length < 3 || cleanStoreName.length > 80 || !/[A-Za-z]{2,}/.test(cleanStoreName)) {
+      return res.status(400).json({
+        error: 'Store name must be between 3 and 80 characters and include letters.',
+      });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanOwnerEmail)) {
+      return res.status(400).json({
+        error: 'Please enter a valid owner email address.',
+      });
+    }
+
+    if (!cleanOwnerPhone) {
+      return res.status(400).json({
+        error: 'Phone / WhatsApp number is required.',
+      });
+    }
+
+    const phoneDigits = cleanOwnerPhone.replace(/\D/g, '');
+    if (
+      !/^[+]?[0-9\s\-()]{7,20}$/.test(cleanOwnerPhone) ||
+      phoneDigits.length < 10 ||
+      phoneDigits.length > 15
+    ) {
+      return res.status(400).json({
+        error: 'Please enter a valid Phone / WhatsApp number (10 to 15 digits).',
       });
     }
 
     const duplicateOwnerEmail = await pgClient.query(
       'SELECT id FROM users WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1)) LIMIT 1',
-      [String(ownerEmail).trim()]
+      [cleanOwnerEmail]
     );
     if (duplicateOwnerEmail.rows.length > 0) {
       return res.status(409).json({
@@ -281,22 +350,25 @@ router.post('/saas/store-requests', async (req: Request, res: Response) => {
       });
     }
 
-    const cleanSlug = await generateUniqueStoreSlug(String(storeName));
-
-    // If a new request is explicitly submitted for this slug, clear any prior deletion tombstone for this slug
-    await pgClient
-      .query('DELETE FROM deleted_store_requests WHERE LOWER(requested_slug) = LOWER($1)', [cleanSlug])
-      .catch(() => {});
+    const duplicatePendingReq = await pgClient.query(
+      "SELECT id FROM store_requests WHERE LOWER(BTRIM(owner_email)) = LOWER(BTRIM($1)) AND status = 'PENDING' LIMIT 1",
+      [cleanOwnerEmail]
+    );
+    if (duplicatePendingReq.rows.length > 0) {
+      return res.status(409).json({
+        code: 'PENDING_REQUEST_EXISTS',
+        error: 'A pending store request already exists for this email address.',
+      });
+    }
 
     const insertRes = await pgClient.query<{ id: number }>(
-      `INSERT INTO store_requests (store_name, requested_slug, owner_email, owner_phone, plan, status)
-       VALUES ($1, $2, $3, $4, $5, 'PENDING')
+      `INSERT INTO store_requests (store_name, owner_email, owner_phone, plan, status)
+       VALUES ($1, $2, $3, $4, 'PENDING')
        RETURNING id`,
       [
-        String(storeName).trim(),
-        cleanSlug,
-        String(ownerEmail).trim().toLowerCase(),
-        String(ownerPhone || '').trim(),
+        cleanStoreName,
+        cleanOwnerEmail,
+        cleanOwnerPhone,
         String(plan || 'PRO_TRIAL').trim(),
       ]
     );
@@ -304,7 +376,7 @@ router.post('/saas/store-requests', async (req: Request, res: Response) => {
     return res.status(201).json({
       success: true,
       requestId: insertRes.rows[0].id,
-      message: `Store request for '${String(storeName).trim()}' submitted! Our SuperAdmin team can now provision it with 1 click.`,
+      message: `Store request for '${cleanStoreName}' submitted! Our SuperAdmin team can now provision it with 1 click.`,
     });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to submit store request: ' + err.message });
@@ -323,7 +395,6 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
 
     const storesRes = await pgClient.query<{
       id: number;
-      slug: string;
       name: string;
       status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
       subscription_plan: string;
@@ -390,7 +461,6 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
         id: number;
         tenant_id: number;
         store_name: string;
-        store_slug: string;
         currency: string;
         product_name: string;
         sku: string;
@@ -409,7 +479,6 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
           p.id,
           p.tenant_id,
           t.name AS store_name,
-          t.slug AS store_slug,
           COALESCE(cs.currency, 'PKR') AS currency,
           COALESCE(NULLIF(TRIM(p.article), ''), p.name) AS product_name,
           p.sku,
@@ -428,7 +497,7 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
         LEFT JOIN company_settings cs ON cs.tenant_id = t.id
         LEFT JOIN sale_items si ON si.product_id = p.id AND si.tenant_id = p.tenant_id
         WHERE p.active = true
-        GROUP BY p.id, p.tenant_id, t.name, t.slug, cs.currency, p.article, p.name, p.sku, p.barcode, p.brand, p.category, p.primary_image_url, p.max_price, p.cost_price, p.total_stock
+        GROUP BY p.id, p.tenant_id, t.name, cs.currency, p.article, p.name, p.sku, p.barcode, p.brand, p.category, p.primary_image_url, p.max_price, p.cost_price, p.total_stock
         ORDER BY COALESCE(SUM(si.subtotal), 0) DESC, COALESCE(SUM(si.quantity), 0) DESC, (COALESCE(p.total_stock, 0) * COALESCE(p.max_price, 0)) DESC
         LIMIT 30
       `)
@@ -460,10 +529,10 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
 
     const recentTxRes = await pgClient
       .query<{
+        tenant_id: number;
         type: string;
         reference: string;
         store_name: string;
-        store_slug: string;
         customer_name: string;
         amount: string;
         currency: string;
@@ -472,10 +541,10 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
       }>(`
         SELECT * FROM (
           SELECT
+            s.tenant_id,
             'Sale' AS type,
             s.invoice_number AS reference,
             t.name AS store_name,
-            t.slug AS store_slug,
             COALESCE(c.name, 'Walk-in Customer') AS customer_name,
             s.total_amount::text AS amount,
             COALESCE(cs.currency_symbol, 'Rs.') AS currency,
@@ -487,10 +556,10 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
           LEFT JOIN customers c ON c.id = s.customer_id AND c.tenant_id = s.tenant_id
           UNION ALL
           SELECT
+            pu.tenant_id,
             'Purchase' AS type,
             pu.purchase_number AS reference,
             t.name AS store_name,
-            t.slug AS store_slug,
             COALESCE(pu.supplier_name, 'Supplier') AS customer_name,
             pu.total_amount::text AS amount,
             COALESCE(cs.currency_symbol, 'Rs.') AS currency,
@@ -501,10 +570,10 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
           LEFT JOIN company_settings cs ON cs.tenant_id = t.id
           UNION ALL
           SELECT
+            r.tenant_id,
             'Return' AS type,
             r.return_number AS reference,
             t.name AS store_name,
-            t.slug AS store_slug,
             'Customer Return' AS customer_name,
             r.total_refund_amount::text AS amount,
             COALESCE(cs.currency_symbol, 'Rs.') AS currency,
@@ -586,7 +655,6 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
 
       return {
         id: s.id,
-        slug: s.slug,
         name: s.name,
         status: s.status,
         subscriptionPlan: normalizeSubscriptionPlan(s.subscription_plan),
@@ -630,7 +698,6 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
       id: r.id,
       tenantId: r.tenant_id,
       storeName: r.store_name,
-      storeSlug: r.store_slug,
       currency: r.currency || 'PKR',
       productName: r.product_name,
       sku: r.sku,
@@ -673,10 +740,10 @@ router.get('/superadmin/overview', requireAuth, requireSuperAdmin, async (_req: 
     const recentTransactions = recentTxRes.rows.map((r) => {
       const dt = r.created_at ? new Date(r.created_at) : new Date();
       return {
+        tenantId: r.tenant_id,
         type: r.type || 'Sale',
         reference: r.reference || '',
         storeName: r.store_name || '',
-        storeSlug: r.store_slug || '',
         customerName: r.customer_name || 'Walk-in Customer',
         amount: parseFloat(r.amount || '0'),
         currency: r.currency || 'Rs.',
@@ -749,7 +816,6 @@ router.patch('/superadmin/tenants/:id/status', requireAuth, requireSuperAdmin, a
 
     const updateRes = await pgClient.query<{
       id: number;
-      slug: string;
       name: string;
       status: string;
       subscription_status: string;
@@ -761,7 +827,7 @@ router.patch('/superadmin/tenants/:id/status', requireAuth, requireSuperAdmin, a
            subscription_end_date = $3,
            updated_at = NOW()
        WHERE id = $4
-       RETURNING id, slug, name, status, subscription_status, subscription_end_date`,
+       RETURNING id, name, status, subscription_status, subscription_end_date`,
       [nextTenantStatus, nextSubStatus, nextEndDate.toISOString(), tenantId]
     );
 
@@ -935,7 +1001,6 @@ async function handleUpdateTenantSubscription(req: AuthenticatedRequest, res: Re
       success: true,
       tenant: {
         id: row.id,
-        slug: row.slug,
         name: row.name,
         status: row.status,
         subscriptionPlan: row.subscription_plan,
@@ -1020,7 +1085,6 @@ router.get('/superadmin/tenants/next-id', requireAuth, requireSuperAdmin, async 
 async function provisionNewTenantStore(params: {
   storeName: string;
   ownerName?: string;
-  slug?: string;
   ownerEmail: string;
   password?: string;
   ownerPhone?: string;
@@ -1030,7 +1094,6 @@ async function provisionNewTenantStore(params: {
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
 }) {
-  const cleanSlug = params.slug ? normalizeStoreSlug(params.slug) : await generateUniqueStoreSlug(params.storeName);
   const normalizedOwnerEmail = params.ownerEmail.trim().toLowerCase();
 
   // Serialize tenant provisioning to prevent concurrent requests from colliding on recycled tenant ID or email
@@ -1047,11 +1110,6 @@ async function provisionNewTenantStore(params: {
     );
     duplicateEmailError.code = 'EMAIL_ALREADY_EXISTS';
     throw duplicateEmailError;
-  }
-
-  const existing = await pgClient.query('SELECT id FROM tenants WHERE LOWER(slug) = $1', [cleanSlug]);
-  if (existing.rows.length > 0) {
-    throw new Error(`Store slug '${cleanSlug}' is already provisioned.`);
   }
 
   const themeColor = params.themeColor || '#7C3AED';
@@ -1077,7 +1135,6 @@ async function provisionNewTenantStore(params: {
 
   const tenantInsert = await pgClient.query<{
     id: number;
-    slug: string;
     name: string;
     subscription_plan: string;
     subscription_start_date: string;
@@ -1085,13 +1142,12 @@ async function provisionNewTenantStore(params: {
     subscription_status: string;
   }>(
     `INSERT INTO tenants (
-      id, slug, name, status, subscription_plan, subscription_start_date, subscription_end_date, subscription_status,
+      id, name, status, subscription_plan, subscription_start_date, subscription_end_date, subscription_status,
       theme_color, background_color, onboarding_completed, deleted_product_ids
-    ) VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6, $7, $8, '#0F172A', false, '{}')
-    RETURNING id, slug, name, subscription_plan, subscription_start_date, subscription_end_date, subscription_status`,
+    ) VALUES ($1, $2, 'ACTIVE', $3, $4, $5, $6, $7, '#0F172A', false, '{}')
+    RETURNING id, name, subscription_plan, subscription_start_date, subscription_end_date, subscription_status`,
     [
       nextTenantId,
-      cleanSlug,
       params.storeName.trim(),
       subscriptionPlan,
       validStartDate.toISOString(),
@@ -1131,7 +1187,6 @@ async function provisionNewTenantStore(params: {
   // Create initial Store Owner (ADMIN) user ONLY! Do NOT create cashier automatically!
   const storeUsers = await ensureTenantStoreUsers({
     tenantId: newTenant.id,
-    slug: cleanSlug,
     storeName: params.storeName.trim(),
     ownerName: params.ownerName?.trim() || params.ownerEmail.split('@')[0],
     ownerEmail: params.ownerEmail.trim().toLowerCase(),
@@ -1142,7 +1197,6 @@ async function provisionNewTenantStore(params: {
 
   return {
     tenantId: newTenant.id,
-    slug: newTenant.slug,
     storeName: newTenant.name,
     subscriptionPlan: newTenant.subscription_plan,
     subscriptionStartDate: new Date(newTenant.subscription_start_date).toISOString(),
@@ -1212,13 +1266,13 @@ router.get('/superadmin/tenants/:id/export-sql', requireAuth, requireSuperAdmin,
     }
     const tenant = tenantRes.rows[0];
     const dateStamp = new Date().toISOString().slice(0, 10);
-    const filename = `store-${tenant.slug}-backup-${dateStamp}.sql`;
+    const filename = `store-${tenant.id}-backup-${dateStamp}.sql`;
 
     const sections: string[] = [
       `-- ============================================================================`,
       `-- Store SQL Backup Dump`,
       `-- Store Name : ${tenant.name}`,
-      `-- Store Slug : ${tenant.slug} (Tenant ID #${tenant.id})`,
+      `-- Tenant ID  : #${tenant.id}`,
       `-- Exported At: ${new Date().toISOString()}`,
       `-- ============================================================================`,
       `BEGIN;`,
@@ -1260,7 +1314,6 @@ router.get('/superadmin/tenants/:id/export-sql', requireAuth, requireSuperAdmin,
       success: true,
       filename,
       storeName: tenant.name,
-      slug: tenant.slug,
       totalRows,
       sql: sections.join('\n'),
     });
@@ -1440,8 +1493,8 @@ async function handleDeleteTenantStore(req: AuthenticatedRequest, res: Response)
       return res.status(400).json({ error: 'Invalid store tenant ID.' });
     }
 
-    const tenantRes = await pgClient.query<{ id: number; slug: string; name: string }>(
-      'SELECT id, slug, name FROM tenants WHERE id = $1 LIMIT 1',
+    const tenantRes = await pgClient.query<{ id: number; name: string }>(
+      'SELECT id, name FROM tenants WHERE id = $1 LIMIT 1',
       [tenantId]
     );
 
@@ -1545,8 +1598,7 @@ async function handleDeleteTenantStore(req: AuthenticatedRequest, res: Response)
       },
       { sql: `DELETE FROM company_settings WHERE tenant_id = $1`, params: [tenantId] },
       { sql: `DELETE FROM users WHERE tenant_id = $1 AND role != 'SUPERADMIN'`, params: [tenantId] },
-      { sql: `UPDATE store_requests SET provisioned_tenant_id = NULL WHERE provisioned_tenant_id = $1`, params: [tenantId] },
-      { sql: `DELETE FROM store_requests WHERE LOWER(requested_slug) = LOWER($1)`, params: [store.slug] },
+      { sql: `DELETE FROM store_requests WHERE provisioned_tenant_id = $1`, params: [tenantId] },
     ];
 
     for (const stmt of orderedCleanupStatements) {
@@ -1588,11 +1640,10 @@ router.post('/superadmin/tenants/:id/delete', requireAuth, requireSuperAdmin, ha
 router.post('/superadmin/store-requests/:id/approve', requireAuth, requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const requestId = parseInt(req.params.id, 10);
-    const { password, slug, storeName } = req.body || {};
+    const { password, storeName } = req.body || {};
     const reqRes = await pgClient.query<{
       id: number;
       store_name: string;
-      requested_slug: string;
       owner_email: string;
       owner_phone: string;
       plan: string;
@@ -1610,17 +1661,16 @@ router.post('/superadmin/store-requests/:id/approve', requireAuth, requireSuperA
       return res.status(400).json({ error: 'This request has already been approved.' });
     }
 
-    const targetSlug = slug && String(slug).trim() ? String(slug).trim().toLowerCase() : String(storeReq.requested_slug || '').trim().toLowerCase();
-
     // Check if this request is for an existing store (RENEWAL request or matching existing tenant)
-    const existingTenantRes = await pgClient.query<any>(
-      `SELECT * FROM tenants
-       WHERE ($1::integer IS NOT NULL AND id = $1)
-          OR LOWER(slug) = LOWER($2)
-       ORDER BY id ASC
-       LIMIT 1`,
-      [storeReq.provisioned_tenant_id || null, targetSlug]
-    );
+    const existingTenantRes = storeReq.provisioned_tenant_id
+      ? await pgClient.query<any>(
+          `SELECT * FROM tenants
+           WHERE id = $1
+           ORDER BY id ASC
+           LIMIT 1`,
+          [storeReq.provisioned_tenant_id]
+        )
+      : { rows: [] };
 
     if (existingTenantRes.rows.length > 0) {
       const existingTenant = existingTenantRes.rows[0];
@@ -1669,7 +1719,6 @@ router.post('/superadmin/store-requests/:id/approve', requireAuth, requireSuperA
         renewed: true,
         provisioned: {
           tenantId: updatedTenant.id,
-          slug: updatedTenant.slug,
           storeName: updatedTenant.name,
           subscriptionPlan: updatedTenant.subscription_plan,
           subscriptionStartDate: new Date(updatedTenant.subscription_start_date).toISOString(),
@@ -1683,7 +1732,6 @@ router.post('/superadmin/store-requests/:id/approve', requireAuth, requireSuperA
     await pgClient.query('BEGIN');
     const provisioned = await provisionNewTenantStore({
       storeName: storeName && String(storeName).trim() ? String(storeName).trim() : storeReq.store_name,
-      slug: slug && String(slug).trim() ? String(slug).trim() : storeReq.requested_slug,
       ownerEmail: storeReq.owner_email,
       ownerPhone: storeReq.owner_phone,
       password: password && String(password).trim() ? String(password).trim() : undefined,
@@ -1691,8 +1739,8 @@ router.post('/superadmin/store-requests/:id/approve', requireAuth, requireSuperA
     });
 
     await pgClient.query(
-      `UPDATE store_requests SET status = 'APPROVED', requested_slug = $1, provisioned_tenant_id = $2, updated_at = NOW() WHERE id = $3`,
-      [provisioned.slug, provisioned.tenantId, requestId]
+      `UPDATE store_requests SET status = 'APPROVED', provisioned_tenant_id = $1, updated_at = NOW() WHERE id = $2`,
+      [provisioned.tenantId, requestId]
     );
     await pgClient.query('COMMIT');
 
@@ -1745,6 +1793,22 @@ router.patch('/superadmin/store-requests/:id', requireAuth, requireSuperAdmin, a
     const nextOwnerPhone = ownerPhone !== undefined ? String(ownerPhone).trim() : curr.owner_phone;
     const nextPlan = plan !== undefined ? String(plan).trim() : curr.plan;
 
+    if (ownerEmail !== undefined && nextOwnerEmail && String(curr.request_type || 'NEW_STORE').toUpperCase() !== 'RENEWAL') {
+      const existingEmailRes = await pgClient.query<{ id: number }>(
+        `SELECT id FROM users
+         WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))
+           AND ($2::integer IS NULL OR tenant_id != $2)
+         LIMIT 1`,
+        [nextOwnerEmail, curr.provisioned_tenant_id || null]
+      );
+      if (existingEmailRes.rows.length > 0) {
+        return res.status(409).json({
+          code: 'EMAIL_ALREADY_EXISTS',
+          error: 'This email is already in use. Please use a different email address.',
+        });
+      }
+    }
+
     const updatedRes = await pgClient.query(
       `UPDATE store_requests
        SET status = $1,
@@ -1778,27 +1842,17 @@ async function handleDeleteStoreRequest(req: AuthenticatedRequest, res: Response
     const existingRes = await pgClient.query<{
       id: number;
       store_name: string;
-      requested_slug: string;
-    }>('SELECT id, store_name, requested_slug FROM store_requests WHERE id = $1 LIMIT 1', [requestId]);
+      owner_email: string;
+    }>('SELECT id, store_name, owner_email FROM store_requests WHERE id = $1 LIMIT 1', [requestId]);
 
     const target = existingRes.rows[0];
-    const slugToRecord = target?.requested_slug || String(req.body?.requestedSlug || '').trim().toLowerCase();
-
-    if (slugToRecord) {
-      await pgClient
-        .query(
-          `INSERT INTO deleted_store_requests (request_id, requested_slug) VALUES ($1, $2)`,
-          [requestId, slugToRecord]
-        )
-        .catch(() => {});
-    }
 
     if (target) {
       await pgClient.query(
         `DELETE FROM store_requests
          WHERE id = $1
-            OR (LOWER(requested_slug) = LOWER($2) AND LOWER(store_name) = LOWER($3))`,
-        [requestId, target.requested_slug || '', target.store_name || '']
+            OR (LOWER(owner_email) = LOWER($2) AND LOWER(store_name) = LOWER($3))`,
+        [requestId, target.owner_email || '', target.store_name || '']
       );
     } else {
       await pgClient.query('DELETE FROM store_requests WHERE id = $1', [requestId]);
@@ -1940,7 +1994,6 @@ router.get('/tenants/onboarding', requireAuth, requireAdmin, async (req: Request
     return res.json({
       tenant: {
         id: t.id,
-        slug: t.slug,
         name: t.name,
         status: t.status,
         address: cs.address || '',
@@ -1982,13 +2035,12 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
 
     const tenantRes = await pgClient.query<{
       id: number;
-      slug: string;
       name: string;
       status: string;
       owner_email: string;
       onboarding_completed: boolean;
     }>(
-      `SELECT t.id, t.slug, t.name, t.status, t.onboarding_completed,
+      `SELECT t.id, t.name, t.status, t.onboarding_completed,
               u.email AS owner_email
        FROM tenants t
        LEFT JOIN LATERAL (
@@ -2085,6 +2137,63 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
     const finalLogoUrl = String(logoUrl || '/pwa-512x512.png').trim();
     const finalPhone = String(phone || '').trim();
     const finalEmail = String(email || tenant.owner_email || '').trim().toLowerCase();
+    const cleanCashierEmail =
+      Boolean(createCashier) && cashierEmail && String(cashierEmail).trim()
+        ? String(cashierEmail).trim().toLowerCase()
+        : '';
+
+    if (finalEmail && cleanCashierEmail && finalEmail === cleanCashierEmail) {
+      await pgClient.query('ROLLBACK').catch(() => {});
+      return res.status(409).json({
+        code: 'EMAIL_ALREADY_EXISTS',
+        error: 'Cashier email cannot be the same as the store owner email. Please use a unique email address.',
+      });
+    }
+
+    const currentStoreAdminRes = await pgClient.query<{ id: number }>(
+      `SELECT id FROM users WHERE tenant_id = $1 AND role = 'ADMIN' ORDER BY id ASC LIMIT 1`,
+      [tenant.id]
+    );
+    const currentStoreAdminId = currentStoreAdminRes.rows[0]?.id || 0;
+
+    if (finalEmail) {
+      const duplicateOwnerEmailRes = await pgClient.query<{ id: number }>(
+        `SELECT id FROM users
+         WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))
+           AND id != $2
+         LIMIT 1`,
+        [finalEmail, currentStoreAdminId]
+      );
+      if (duplicateOwnerEmailRes.rows.length > 0) {
+        await pgClient.query('ROLLBACK').catch(() => {});
+        return res.status(409).json({
+          code: 'EMAIL_ALREADY_EXISTS',
+          error: 'This email is already in use. Please use a different email address.',
+        });
+      }
+    }
+
+    if (cleanCashierEmail) {
+      const currentCashierRes = await pgClient.query<{ id: number }>(
+        `SELECT id FROM users WHERE tenant_id = $1 AND role = 'CASHIER' ORDER BY id ASC LIMIT 1`,
+        [tenant.id]
+      );
+      const currentCashierId = currentCashierRes.rows[0]?.id || 0;
+      const duplicateCashierEmailRes = await pgClient.query<{ id: number }>(
+        `SELECT id FROM users
+         WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1))
+           AND id != $2
+         LIMIT 1`,
+        [cleanCashierEmail, currentCashierId]
+      );
+      if (duplicateCashierEmailRes.rows.length > 0) {
+        await pgClient.query('ROLLBACK').catch(() => {});
+        return res.status(409).json({
+          code: 'EMAIL_ALREADY_EXISTS',
+          error: 'This cashier email is already in use. Please use a different email address.',
+        });
+      }
+    }
 
     // Update tenants table and mark store ACTIVE + onboarded (locked)
     await pgClient.query(
@@ -2178,7 +2287,6 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
     // Ensure Store Owner (ADMIN) exists, and only create Cashier if user explicitly requested it!
     const ensuredUsers = await ensureTenantStoreUsers({
       tenantId: tenant.id,
-      slug: tenant.slug,
       storeName: finalName,
       ownerName: ownerName && String(ownerName).trim() ? String(ownerName).trim() : undefined,
       ownerEmail: finalEmail || tenant.owner_email,
@@ -2247,7 +2355,7 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
         const pSku =
           item.sku && String(item.sku).trim()
             ? String(item.sku).trim()
-            : `${tenant.slug.toUpperCase().slice(0, 4)}-${Date.now().toString().slice(-4)}-${i + 1}`;
+            : `SHOE-${tenant.id}-${Date.now().toString().slice(-4)}-${i + 1}`;
         const pBarcode =
           item.barcode && String(item.barcode).trim()
             ? String(item.barcode).trim()
@@ -2271,7 +2379,6 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
       token = generateToken({
         id: adminUser.id,
         tenantId: tenant.id,
-        slug: tenant.slug,
         name: adminUser.name,
         email: adminUser.email,
         role: 'ADMIN',
@@ -2289,7 +2396,6 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
         ? {
             id: adminUser.id,
             tenantId: tenant.id,
-            slug: tenant.slug,
             tenantName: finalName,
             name: adminUser.name,
             email: adminUser.email,
@@ -2305,7 +2411,7 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
     });
   } catch (err: any) {
     await pgClient.query('ROLLBACK').catch(() => {});
-    if (err?.code === '23505' && String(err?.constraint || '').includes('users_email')) {
+    if (err?.code === 'EMAIL_ALREADY_EXISTS' || (err?.code === '23505' && String(err?.constraint || '').includes('users_email'))) {
       return res.status(409).json({
         code: 'EMAIL_ALREADY_EXISTS',
         error: 'This email is already in use. Please use a different email address.',

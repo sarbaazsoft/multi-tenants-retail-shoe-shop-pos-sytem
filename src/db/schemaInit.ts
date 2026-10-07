@@ -60,738 +60,363 @@ export async function syncExpiredTenantSubscriptions(): Promise<void> {
   } catch {}
 }
 
+export const REQUIRED_DATABASE_TABLES = [
+  'tenants',
+  'users',
+  'store_requests',
+  'deleted_store_requests',
+  'password_reset_tokens',
+  'company_settings',
+  'brands',
+  'categories',
+  'products',
+  'customers',
+  'suppliers',
+  'purchases',
+  'supplier_payments',
+  'purchase_items',
+  'purchase_returns',
+  'purchase_return_items',
+  'sales',
+  'sale_items',
+  'returns',
+  'return_items',
+  'stock_movements',
+] as const;
+
+const DATABASE_TABLE_DDL: string[] = [
+  `CREATE TABLE IF NOT EXISTS tenants (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    subscription_plan TEXT NOT NULL DEFAULT 'YEARLY',
+    subscription_start_date TIMESTAMP NOT NULL DEFAULT NOW(),
+    subscription_end_date TIMESTAMP NOT NULL DEFAULT (NOW() + INTERVAL '1 year'),
+    subscription_status TEXT NOT NULL DEFAULT 'ACTIVE',
+    theme_color TEXT NOT NULL DEFAULT '#2563EB',
+    background_color TEXT NOT NULL DEFAULT '#ffffff',
+    onboarding_completed BOOLEAN NOT NULL DEFAULT false,
+    deleted_product_ids INTEGER[] NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL UNIQUE,
+    phone TEXT DEFAULT '',
+    avatar_url TEXT DEFAULT '',
+    password_hash TEXT NOT NULL,
+    quick_password TEXT DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'CASHIER',
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS store_requests (
+    id SERIAL PRIMARY KEY,
+    store_name TEXT NOT NULL,
+    owner_email TEXT NOT NULL,
+    owner_phone TEXT DEFAULT '',
+    business_address TEXT DEFAULT '',
+    plan TEXT NOT NULL DEFAULT 'PRO',
+    request_type TEXT NOT NULL DEFAULT 'NEW_STORE',
+    notes TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    provisioned_tenant_id INTEGER REFERENCES tenants(id) ON DELETE SET NULL,
+    initial_password TEXT DEFAULT '',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS deleted_store_requests (
+    id SERIAL PRIMARY KEY,
+    request_id INTEGER,
+    marker_key TEXT NOT NULL DEFAULT '',
+    deleted_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS company_settings (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    logo TEXT DEFAULT '',
+    address TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    website TEXT DEFAULT '',
+    strn TEXT DEFAULT '',
+    tax_id TEXT DEFAULT '',
+    tax_rate NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
+    currency TEXT NOT NULL DEFAULT 'PKR',
+    currency_name TEXT NOT NULL DEFAULT 'Pakistani Rupee',
+    currency_symbol TEXT NOT NULL DEFAULT 'Rs.',
+    invoice_prefix TEXT NOT NULL DEFAULT 'INV-',
+    purchase_prefix TEXT NOT NULL DEFAULT 'PUR-',
+    barcode_prefix TEXT NOT NULL DEFAULT '',
+    invoice_footer TEXT NOT NULL DEFAULT 'Thank you for shopping with us!',
+    show_receipt_logo BOOLEAN NOT NULL DEFAULT false,
+    receipt_logo TEXT DEFAULT '',
+    low_stock_limit INTEGER NOT NULL DEFAULT 5,
+    pricing_mode TEXT NOT NULL DEFAULT 'FIXED',
+    pricing_policy_locked BOOLEAN NOT NULL DEFAULT false,
+    is_installed BOOLEAN DEFAULT false,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS brands (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS categories (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS products (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    tenant_product_no INTEGER,
+    name TEXT NOT NULL,
+    brand VARCHAR(100) NOT NULL DEFAULT 'Local',
+    category VARCHAR(100) NOT NULL DEFAULT 'Men',
+    sku TEXT NOT NULL,
+    barcode TEXT NOT NULL,
+    article TEXT DEFAULT '',
+    primary_image_url TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    cost_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    min_price INTEGER NOT NULL DEFAULT 0,
+    max_price INTEGER NOT NULL DEFAULT 0,
+    pricing_policy TEXT DEFAULT NULL,
+    total_stock INTEGER NOT NULL DEFAULT 0,
+    low_stock_limit INTEGER NOT NULL DEFAULT 5,
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS customers (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    email TEXT,
+    address TEXT,
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS suppliers (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    balance NUMERIC(12, 2) DEFAULT 0.00,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS purchases (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    purchase_number TEXT NOT NULL,
+    supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+    supplier_name TEXT NOT NULL,
+    purchase_date TEXT NOT NULL,
+    total_amount NUMERIC(12, 2) NOT NULL,
+    paid_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    payment_status TEXT NOT NULL DEFAULT 'UNPAID',
+    payment_method TEXT DEFAULT 'CASH',
+    notes TEXT,
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS supplier_payments (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    payment_number TEXT NOT NULL,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    supplier_name TEXT NOT NULL,
+    purchase_id INTEGER REFERENCES purchases(id) ON DELETE SET NULL,
+    amount NUMERIC(12, 2) NOT NULL,
+    payment_date TEXT NOT NULL,
+    payment_method TEXT NOT NULL DEFAULT 'CASH',
+    reference_number TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS purchase_items (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    quantity INTEGER NOT NULL,
+    unit_purchase_price NUMERIC(12, 2) NOT NULL,
+    subtotal NUMERIC(12, 2) NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS purchase_returns (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    return_number TEXT NOT NULL,
+    purchase_id INTEGER REFERENCES purchases(id) ON DELETE SET NULL,
+    supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+    supplier_name TEXT NOT NULL,
+    return_date TEXT NOT NULL,
+    total_debit_amount NUMERIC(12, 2) NOT NULL,
+    reason TEXT NOT NULL,
+    notes TEXT,
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS purchase_return_items (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    purchase_return_id INTEGER NOT NULL REFERENCES purchase_returns(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    quantity INTEGER NOT NULL,
+    unit_purchase_price NUMERIC(12, 2) NOT NULL,
+    subtotal NUMERIC(12, 2) NOT NULL,
+    defect_type TEXT DEFAULT 'MANUFACTURING_DEFECT'
+  )`,
+  `CREATE TABLE IF NOT EXISTS sales (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    invoice_number TEXT NOT NULL,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    sale_date TEXT NOT NULL,
+    subtotal NUMERIC(12, 2) NOT NULL,
+    discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    total_amount NUMERIC(12, 2) NOT NULL,
+    payment_method TEXT NOT NULL DEFAULT 'CASH',
+    cash_received NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    change_given NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    is_min_price_overridden BOOLEAN NOT NULL DEFAULT false,
+    overridden_by INTEGER REFERENCES users(id),
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS sale_items (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    product_name TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit_price NUMERIC(12, 2) NOT NULL,
+    discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    subtotal NUMERIC(12, 2) NOT NULL,
+    purchase_price NUMERIC(12, 2) NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS returns (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    return_number TEXT NOT NULL,
+    original_sale_id INTEGER NOT NULL REFERENCES sales(id),
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    return_date TEXT NOT NULL,
+    total_refund_amount NUMERIC(12, 2) NOT NULL,
+    reason TEXT NOT NULL,
+    created_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE TABLE IF NOT EXISTS return_items (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    return_id INTEGER NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
+    sale_item_id INTEGER NOT NULL REFERENCES sale_items(id),
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    quantity INTEGER NOT NULL,
+    unit_refund_price NUMERIC(12, 2) NOT NULL,
+    subtotal NUMERIC(12, 2) NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS stock_movements (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL DEFAULT 1,
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    qty_change INTEGER NOT NULL,
+    prev_stock INTEGER NOT NULL,
+    new_stock INTEGER NOT NULL,
+    movement_type TEXT NOT NULL,
+    reference_id TEXT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  )`,
+];
+
+const DATABASE_INDEX_DDL: string[] = [
+  `CREATE INDEX IF NOT EXISTS tenants_status_idx ON tenants(status)`,
+  `CREATE INDEX IF NOT EXISTS tenants_subscription_status_idx ON tenants(subscription_status)`,
+  `CREATE INDEX IF NOT EXISTS deleted_store_requests_marker_idx ON deleted_store_requests(marker_key)`,
+  `CREATE INDEX IF NOT EXISTS users_tenant_idx ON users(tenant_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique_idx ON users (LOWER(BTRIM(email)))`,
+  `CREATE INDEX IF NOT EXISTS company_settings_tenant_idx ON company_settings(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS brands_tenant_idx ON brands(tenant_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS brands_tenant_name_lower_idx ON brands(tenant_id, LOWER(TRIM(name)))`,
+  `CREATE INDEX IF NOT EXISTS categories_tenant_idx ON categories(tenant_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS categories_tenant_name_lower_idx ON categories(tenant_id, LOWER(TRIM(name)))`,
+  `CREATE INDEX IF NOT EXISTS products_tenant_idx ON products(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS products_tenant_product_no_idx ON products(tenant_id, tenant_product_no)`,
+  `CREATE INDEX IF NOT EXISTS products_brand_idx ON products(brand)`,
+  `CREATE INDEX IF NOT EXISTS products_category_idx ON products(category)`,
+  `CREATE INDEX IF NOT EXISTS products_barcode_idx ON products(barcode)`,
+  `CREATE INDEX IF NOT EXISTS products_sku_idx ON products(sku)`,
+  `CREATE INDEX IF NOT EXISTS products_article_idx ON products(article)`,
+  `CREATE INDEX IF NOT EXISTS products_active_idx ON products(active)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS products_tenant_barcode_unique_idx ON products (COALESCE(tenant_id, 1), LOWER(BTRIM(barcode))) WHERE barcode IS NOT NULL AND BTRIM(barcode) <> ''`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS products_tenant_article_unique_idx ON products (COALESCE(tenant_id, 1), LOWER(BTRIM(article))) WHERE article IS NOT NULL AND BTRIM(article) <> ''`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS products_tenant_sku_unique_idx ON products (COALESCE(tenant_id, 1), LOWER(BTRIM(sku))) WHERE sku IS NOT NULL AND BTRIM(sku) <> ''`,
+  `CREATE INDEX IF NOT EXISTS customers_tenant_idx ON customers(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS customers_phone_idx ON customers(phone)`,
+  `CREATE INDEX IF NOT EXISTS suppliers_tenant_idx ON suppliers(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS purchases_tenant_idx ON purchases(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS supplier_payments_tenant_idx ON supplier_payments(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS supplier_payments_supplier_idx ON supplier_payments(supplier_id)`,
+  `CREATE INDEX IF NOT EXISTS supplier_payments_date_idx ON supplier_payments(payment_date)`,
+  `CREATE INDEX IF NOT EXISTS supplier_payments_number_idx ON supplier_payments(payment_number)`,
+  `CREATE INDEX IF NOT EXISTS purchase_returns_tenant_idx ON purchase_returns(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS purchase_returns_number_idx ON purchase_returns(return_number)`,
+  `CREATE INDEX IF NOT EXISTS purchase_returns_supplier_idx ON purchase_returns(supplier_id)`,
+  `CREATE INDEX IF NOT EXISTS purchase_return_items_return_idx ON purchase_return_items(purchase_return_id)`,
+  `CREATE INDEX IF NOT EXISTS purchase_return_items_product_idx ON purchase_return_items(product_id)`,
+  `CREATE INDEX IF NOT EXISTS sales_tenant_idx ON sales(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS sales_invoice_idx ON sales(invoice_number)`,
+  `CREATE INDEX IF NOT EXISTS returns_tenant_idx ON returns(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS stock_movements_tenant_idx ON stock_movements(tenant_id)`,
+  `CREATE INDEX IF NOT EXISTS stock_movements_product_idx ON stock_movements(product_id)`,
+  `CREATE INDEX IF NOT EXISTS stock_movements_created_at_idx ON stock_movements(created_at)`,
+];
+
 /**
  * Ensures that all database tables, columns, constraints, and multi-tenant discriminators exist.
  * Idempotent and safe for PostgreSQL.
  */
 export async function ensureDatabaseSchema(): Promise<void> {
-  if (saasControlPlaneInitialized) return;
   if (databaseSchemaPromise) return databaseSchemaPromise;
 
   databaseSchemaPromise = (async () => {
     try {
       await pgClient.waitReady;
 
-  // Migrate any legacy TEXT/VARCHAR tenants.id or tenant_id columns to INTEGER before DDL
-  await pgClient.exec(`
-    DO $$
-    DECLARE
-      fk RECORD;
-      tbl RECORD;
-    BEGIN
-      -- 1. Drop any foreign key constraints on tenant_id / provisioned_tenant_id or referencing tenants
-      FOR fk IN
-        SELECT DISTINCT tc.table_name, tc.constraint_name
-        FROM information_schema.table_constraints tc
-        LEFT JOIN information_schema.key_column_usage kcu
-          ON tc.constraint_name = kcu.constraint_name
-          AND tc.table_schema = kcu.table_schema
-        LEFT JOIN information_schema.constraint_column_usage ccu
-          ON tc.constraint_name = ccu.constraint_name
-          AND tc.table_schema = ccu.table_schema
-        WHERE tc.table_schema = 'public'
-          AND tc.constraint_type = 'FOREIGN KEY'
-          AND (kcu.column_name IN ('tenant_id', 'provisioned_tenant_id') OR ccu.table_name = 'tenants')
-      LOOP
-        EXECUTE format('ALTER TABLE %I DROP CONSTRAINT IF EXISTS %I CASCADE', fk.table_name, fk.constraint_name);
-      END LOOP;
+      // 1. Create all tables in strict dependency order (tenants and users first)
+      for (const ddl of DATABASE_TABLE_DDL) {
+        await pgClient.exec(ddl);
+      }
 
-      -- 2. If tenants.id is not integer (e.g., legacy 'default-store-id' text), drop and recreate with SERIAL PRIMARY KEY
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'id' AND data_type != 'integer'
-      ) THEN
-        DROP TABLE IF EXISTS store_requests CASCADE;
-        DROP TABLE IF EXISTS tenants CASCADE;
-      END IF;
-
-      -- 3. If store_requests.provisioned_tenant_id is not integer, drop store_requests so it is recreated cleanly
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'store_requests' AND column_name = 'provisioned_tenant_id' AND data_type != 'integer'
-      ) THEN
-        DROP TABLE IF EXISTS store_requests CASCADE;
-      END IF;
-
-      -- 4. Convert any non-integer tenant_id column across all tables to INTEGER NOT NULL DEFAULT 1
-      FOR tbl IN
-        SELECT table_name
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND column_name = 'tenant_id'
-          AND data_type != 'integer'
-      LOOP
-        EXECUTE format('ALTER TABLE %I ALTER COLUMN tenant_id DROP DEFAULT', tbl.table_name);
-        EXECUTE format(
-          'ALTER TABLE %I ALTER COLUMN tenant_id TYPE INTEGER USING (CASE WHEN tenant_id IS NOT NULL AND TRIM(tenant_id::text) ~ ''^[0-9]+$'' THEN TRIM(tenant_id::text)::integer ELSE 1 END)',
-          tbl.table_name
-        );
-        EXECUTE format('UPDATE %I SET tenant_id = 1 WHERE tenant_id IS NULL OR tenant_id <= 0', tbl.table_name);
-        EXECUTE format('ALTER TABLE %I ALTER COLUMN tenant_id SET DEFAULT 1', tbl.table_name);
-        EXECUTE format('ALTER TABLE %I ALTER COLUMN tenant_id SET NOT NULL', tbl.table_name);
-      END LOOP;
-
-      -- 5. Ensure any existing integer tenant_id columns have no NULL values and default to 1
-      FOR tbl IN
-        SELECT table_name
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND column_name = 'tenant_id'
-          AND data_type = 'integer'
-      LOOP
-        EXECUTE format('UPDATE %I SET tenant_id = 1 WHERE tenant_id IS NULL OR tenant_id <= 0', tbl.table_name);
-        EXECUTE format('ALTER TABLE %I ALTER COLUMN tenant_id SET DEFAULT 1', tbl.table_name);
-      END LOOP;
-    END $$;
-  `);
-
-  await pgClient.exec(`
-    CREATE TABLE IF NOT EXISTS tenants (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL DEFAULT '',
-      slug TEXT NOT NULL UNIQUE,
-      status TEXT NOT NULL DEFAULT 'ACTIVE',
-      subscription_plan TEXT NOT NULL DEFAULT 'YEARLY',
-      subscription_start_date TIMESTAMP NOT NULL DEFAULT NOW(),
-      subscription_end_date TIMESTAMP NOT NULL DEFAULT (NOW() + INTERVAL '1 year'),
-      subscription_status TEXT NOT NULL DEFAULT 'ACTIVE',
-      theme_color TEXT NOT NULL DEFAULT '#2563EB',
-      background_color TEXT NOT NULL DEFAULT '#ffffff',
-      onboarding_completed BOOLEAN NOT NULL DEFAULT false,
-      deleted_product_ids INTEGER[] NOT NULL DEFAULT '{}',
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-
-    DROP INDEX IF EXISTS tenants_app_key_idx;
-    ALTER TABLE tenants DROP COLUMN IF EXISTS app_key CASCADE;
-    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_plan TEXT NOT NULL DEFAULT 'YEARLY';
-    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_start_date TIMESTAMP NOT NULL DEFAULT NOW();
-    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMP NOT NULL DEFAULT (NOW() + INTERVAL '1 year');
-    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'ACTIVE';
-    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS theme_color TEXT NOT NULL DEFAULT '#2563EB';
-    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS background_color TEXT NOT NULL DEFAULT '#ffffff';
-    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT false;
-    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS deleted_product_ids INTEGER[] NOT NULL DEFAULT '{}';
-    CREATE INDEX IF NOT EXISTS tenants_slug_idx ON tenants(slug);
-    CREATE INDEX IF NOT EXISTS tenants_status_idx ON tenants(status);
-    CREATE INDEX IF NOT EXISTS tenants_subscription_status_idx ON tenants(subscription_status);
-
-    CREATE TABLE IF NOT EXISTS store_requests (
-      id SERIAL PRIMARY KEY,
-      store_name TEXT NOT NULL,
-      requested_slug TEXT NOT NULL,
-      owner_email TEXT NOT NULL,
-      owner_phone TEXT DEFAULT '',
-      business_address TEXT DEFAULT '',
-      plan TEXT NOT NULL DEFAULT 'PRO',
-      request_type TEXT NOT NULL DEFAULT 'NEW_STORE',
-      notes TEXT DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'PENDING',
-      provisioned_tenant_id INTEGER REFERENCES tenants(id) ON DELETE SET NULL,
-      initial_password TEXT DEFAULT '',
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-
-    ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS request_type TEXT NOT NULL DEFAULT 'NEW_STORE';
-    ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
-    ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS provisioned_tenant_id INTEGER;
-    ALTER TABLE store_requests DROP COLUMN IF EXISTS owner_name;
-
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT DEFAULT '',
-      avatar_url TEXT DEFAULT '',
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'CASHIER',
-      status TEXT NOT NULL DEFAULT 'PENDING',
-      active BOOLEAN NOT NULL DEFAULT true,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT '';
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT '';
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS quick_password TEXT DEFAULT '';
-    CREATE INDEX IF NOT EXISTS users_tenant_idx ON users(tenant_id);
-
-    CREATE TABLE IF NOT EXISTS password_reset_tokens (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      token TEXT NOT NULL UNIQUE,
-      expires_at TIMESTAMP NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-
-    CREATE TABLE IF NOT EXISTS company_settings (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      logo TEXT DEFAULT '',
-      address TEXT DEFAULT '',
-      phone TEXT DEFAULT '',
-      email TEXT DEFAULT '',
-      website TEXT DEFAULT '',
-      strn TEXT DEFAULT '',
-      tax_id TEXT DEFAULT '',
-      tax_rate NUMERIC(5, 2) NOT NULL DEFAULT 0.00,
-      currency TEXT NOT NULL DEFAULT 'PKR',
-      currency_name TEXT NOT NULL DEFAULT 'Pakistani Rupee',
-      currency_symbol TEXT NOT NULL DEFAULT 'Rs.',
-      invoice_prefix TEXT NOT NULL DEFAULT 'INV-',
-      purchase_prefix TEXT NOT NULL DEFAULT 'PUR-',
-      barcode_prefix TEXT NOT NULL DEFAULT '',
-      invoice_footer TEXT NOT NULL DEFAULT 'Thank you for shopping with us!',
-      show_receipt_logo BOOLEAN NOT NULL DEFAULT false,
-      receipt_logo TEXT DEFAULT '',
-      low_stock_limit INTEGER NOT NULL DEFAULT 5,
-      pricing_mode TEXT NOT NULL DEFAULT 'FIXED',
-      pricing_policy_locked BOOLEAN NOT NULL DEFAULT false,
-      is_installed BOOLEAN DEFAULT false,
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS strn TEXT DEFAULT '';
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS tax_id TEXT DEFAULT '';
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5, 2) NOT NULL DEFAULT 0.00;
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS currency_name TEXT DEFAULT 'Pakistani Rupee';
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS is_installed BOOLEAN DEFAULT false;
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS pricing_mode TEXT DEFAULT 'FIXED';
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS pricing_policy_locked BOOLEAN DEFAULT false;
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS show_receipt_logo BOOLEAN DEFAULT false;
-    ALTER TABLE company_settings ADD COLUMN IF NOT EXISTS receipt_logo TEXT DEFAULT '';
-    CREATE INDEX IF NOT EXISTS company_settings_tenant_idx ON company_settings(tenant_id);
-
-    -- Consolidate & drop legacy duplicate columns between tenants, company_settings, and users
-    DO $$
-    BEGIN
-      -- 0. Relocate deleted_product_ids from company_settings to tenants table and drop from company_settings
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'company_settings' AND column_name = 'deleted_product_ids'
-      ) THEN
-        EXECUTE 'UPDATE tenants t
-                 SET deleted_product_ids = (
-                   SELECT COALESCE(array_agg(DISTINCT x ORDER BY x ASC), ''{}'')
-                   FROM unnest(array_cat(COALESCE(t.deleted_product_ids, ''{}''), COALESCE(cs.deleted_product_ids, ''{}''))) AS x
-                   WHERE x >= 1
-                 )
-                 FROM company_settings cs
-                 WHERE cs.tenant_id = t.id
-                   AND cs.deleted_product_ids IS NOT NULL
-                   AND cardinality(cs.deleted_product_ids) > 0';
-        EXECUTE 'ALTER TABLE company_settings DROP COLUMN IF EXISTS deleted_product_ids';
-      END IF;
-      -- 1. If company_settings had legacy name column, migrate non-default values into tenants.name and drop company_settings.name
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'company_settings' AND column_name = 'name'
-      ) THEN
-        EXECUTE 'UPDATE tenants t SET name = cs.name FROM company_settings cs WHERE cs.tenant_id = t.id AND cs.name IS NOT NULL AND TRIM(cs.name) != '''' AND cs.name != ''Your Shoe Store''';
-        EXECUTE 'ALTER TABLE company_settings DROP COLUMN IF EXISTS name';
-      END IF;
-
-      -- 2. If company_settings had legacy tax_number column, migrate non-empty values into tax_id and drop tax_number
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'company_settings' AND column_name = 'tax_number'
-      ) THEN
-        EXECUTE 'UPDATE company_settings SET tax_id = tax_number WHERE (tax_id IS NULL OR tax_id = '''') AND tax_number IS NOT NULL AND tax_number != ''''';
-        EXECUTE 'ALTER TABLE company_settings DROP COLUMN IF EXISTS tax_number';
-      END IF;
-
-      -- 2. If tenants had legacy is_onboarded column, sync into onboarding_completed before dropping
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'is_onboarded'
-      ) THEN
-        EXECUTE 'UPDATE tenants SET onboarding_completed = true WHERE is_onboarded = true';
-      END IF;
-
-      -- 3. Migrate any existing store profile fields from tenants into company_settings before dropping duplicate columns
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'logo_url'
-      ) THEN
-        EXECUTE 'UPDATE company_settings cs SET logo = t.logo_url FROM tenants t WHERE cs.tenant_id = t.id AND (cs.logo IS NULL OR cs.logo = '''') AND t.logo_url IS NOT NULL AND t.logo_url != ''''';
-      END IF;
-
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'address'
-      ) THEN
-        EXECUTE 'UPDATE company_settings cs SET address = t.address FROM tenants t WHERE cs.tenant_id = t.id AND (cs.address IS NULL OR cs.address = '''') AND t.address IS NOT NULL AND t.address != ''''';
-      END IF;
-
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'business_address'
-      ) THEN
-        EXECUTE 'UPDATE company_settings cs SET address = t.business_address FROM tenants t WHERE cs.tenant_id = t.id AND (cs.address IS NULL OR cs.address = '''') AND t.business_address IS NOT NULL AND t.business_address != ''''';
-      END IF;
-
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'tax_id'
-      ) THEN
-        EXECUTE 'UPDATE company_settings cs SET tax_id = t.tax_id FROM tenants t WHERE cs.tenant_id = t.id AND (cs.tax_id IS NULL OR cs.tax_id = '''') AND t.tax_id IS NOT NULL AND t.tax_id != ''''';
-      END IF;
-
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'currency'
-      ) THEN
-        EXECUTE 'UPDATE company_settings cs SET currency = t.currency FROM tenants t WHERE cs.tenant_id = t.id AND (cs.currency IS NULL OR cs.currency = '''') AND t.currency IS NOT NULL AND t.currency != ''''';
-      END IF;
-
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'currency_symbol'
-      ) THEN
-        EXECUTE 'UPDATE company_settings cs SET currency_symbol = t.currency_symbol FROM tenants t WHERE cs.tenant_id = t.id AND (cs.currency_symbol IS NULL OR cs.currency_symbol = '''') AND t.currency_symbol IS NOT NULL AND t.currency_symbol != ''''';
-      END IF;
-
-      -- 4. Drop duplicate owner & store profile columns from tenants (single source of truth: users for owner identity, company_settings for store profile)
-      ALTER TABLE tenants DROP COLUMN IF EXISTS owner_name;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS owner_email;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS owner_phone;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS business_address;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS address;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS tax_id;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS currency;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS currency_symbol;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS logo_url;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS plan;
-      ALTER TABLE tenants DROP COLUMN IF EXISTS is_onboarded;
-    END $$;
-
-    UPDATE company_settings cs
-    SET pricing_policy_locked = true,
-        is_installed = true
-    FROM tenants t
-    WHERE cs.tenant_id = t.id
-      AND t.onboarding_completed = true;
-
-    CREATE TABLE IF NOT EXISTS brands (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      name TEXT NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE brands ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    CREATE INDEX IF NOT EXISTS brands_tenant_idx ON brands(tenant_id);
-
-    DELETE FROM brands a USING brands b
-    WHERE a.id > b.id
-      AND a.tenant_id = b.tenant_id
-      AND LOWER(TRIM(a.name)) = LOWER(TRIM(b.name));
-
-    CREATE UNIQUE INDEX IF NOT EXISTS brands_tenant_name_lower_idx ON brands(tenant_id, LOWER(TRIM(name)));
-
-    CREATE TABLE IF NOT EXISTS categories (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      name TEXT NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE categories ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    CREATE INDEX IF NOT EXISTS categories_tenant_idx ON categories(tenant_id);
-
-    DELETE FROM categories a USING categories b
-    WHERE a.id > b.id
-      AND a.tenant_id = b.tenant_id
-      AND LOWER(TRIM(a.name)) = LOWER(TRIM(b.name));
-
-    CREATE UNIQUE INDEX IF NOT EXISTS categories_tenant_name_lower_idx ON categories(tenant_id, LOWER(TRIM(name)));
-
-    CREATE TABLE IF NOT EXISTS products (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      tenant_product_no INTEGER,
-      name TEXT NOT NULL,
-      brand VARCHAR(100) NOT NULL DEFAULT 'Local',
-      category VARCHAR(100) NOT NULL DEFAULT 'Men',
-      sku TEXT NOT NULL,
-      barcode TEXT NOT NULL,
-      article TEXT DEFAULT '',
-      primary_image_url TEXT DEFAULT '',
-      description TEXT DEFAULT '',
-      cost_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-      min_price INTEGER NOT NULL DEFAULT 0,
-      max_price INTEGER NOT NULL DEFAULT 0,
-      pricing_policy TEXT DEFAULT NULL,
-      total_stock INTEGER NOT NULL DEFAULT 0,
-      low_stock_limit INTEGER NOT NULL DEFAULT 5,
-      active BOOLEAN NOT NULL DEFAULT true,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS tenant_product_no INTEGER;
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS brand VARCHAR(100) DEFAULT 'Local';
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT 'Men';
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS article TEXT DEFAULT '';
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS primary_image_url TEXT DEFAULT '';
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12, 2) DEFAULT 0.00;
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS min_price INTEGER DEFAULT 0;
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS max_price INTEGER DEFAULT 0;
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS pricing_policy TEXT DEFAULT NULL;
-    DO $$ BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'selling_price'
-      ) THEN
-        EXECUTE 'UPDATE products SET max_price = CASE WHEN COALESCE(max_price, 0) = 0 THEN COALESCE(selling_price, 0) ELSE max_price END, min_price = CASE WHEN COALESCE(min_price, 0) = 0 AND UPPER(COALESCE(pricing_policy, '''')) = ''FIXED'' THEN COALESCE(selling_price, 0) ELSE min_price END';
-        EXECUTE 'ALTER TABLE products DROP COLUMN selling_price';
-      END IF;
-    END $$;
-    UPDATE products p
-    SET min_price = CASE
-          WHEN policies.effective_policy = 'FIXED' THEN COALESCE(p.max_price, 0)
-          ELSE COALESCE(p.min_price, 0)
-        END,
-        max_price = CASE
-          WHEN policies.effective_policy = 'NEGOTIABLE' AND COALESCE(p.max_price, 0) <= COALESCE(p.min_price, 0)
-            THEN COALESCE(p.min_price, 0) + 1
-          ELSE COALESCE(p.max_price, 0)
-        END
-    FROM (
-      SELECT source.id,
-             COALESCE(NULLIF(UPPER(source.pricing_policy), ''), UPPER(settings.pricing_mode), 'FIXED') AS effective_policy
-      FROM products source
-      LEFT JOIN company_settings settings ON COALESCE(settings.tenant_id, 1) = COALESCE(source.tenant_id, 1)
-    ) policies
-    WHERE policies.id = p.id;
-    ALTER TABLE products DROP CONSTRAINT IF EXISTS products_sku_key;
-    ALTER TABLE products DROP CONSTRAINT IF EXISTS products_barcode_key;
-    ALTER TABLE products DROP CONSTRAINT IF EXISTS products_article_key;
-    ALTER TABLE products DROP CONSTRAINT IF EXISTS products_sku_unique;
-    ALTER TABLE products DROP CONSTRAINT IF EXISTS products_barcode_unique;
-    ALTER TABLE products DROP CONSTRAINT IF EXISTS products_article_unique;
-    DROP INDEX IF EXISTS products_barcode_idx;
-    DROP INDEX IF EXISTS products_sku_idx;
-    DROP INDEX IF EXISTS products_article_idx;
-
-    -- Dynamically drop any remaining non-tenant UNIQUE constraint or UNIQUE index on products (sku, barcode, article must be unique per store tenant_id, NEVER globally)
-    DO $$
-    DECLARE
-      c RECORD;
-      idx RECORD;
-    BEGIN
-      FOR c IN
-        SELECT con.conname
-        FROM pg_constraint con
-        JOIN pg_class rel ON rel.oid = con.conrelid
-        JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-        WHERE nsp.nspname = 'public'
-          AND rel.relname = 'products'
-          AND con.contype = 'u'
-          AND NOT EXISTS (
-            SELECT 1
-            FROM unnest(con.conkey) AS k(col_attnum)
-            JOIN pg_attribute attr ON attr.attrelid = rel.oid AND attr.attnum = k.col_attnum
-            WHERE attr.attname = 'tenant_id'
-          )
-      LOOP
-        EXECUTE format('ALTER TABLE public.products DROP CONSTRAINT IF EXISTS %I CASCADE', c.conname);
-      END LOOP;
-
-      FOR idx IN
-        SELECT i.relname AS index_name
-        FROM pg_index ix
-        JOIN pg_class t ON t.oid = ix.indrelid
-        JOIN pg_class i ON i.oid = ix.indexrelid
-        JOIN pg_namespace nsp ON nsp.oid = t.relnamespace
-        WHERE nsp.nspname = 'public'
-          AND t.relname = 'products'
-          AND ix.indisunique = true
-          AND ix.indisprimary = false
-          AND NOT EXISTS (
-            SELECT 1
-            FROM unnest(ix.indkey) AS k(col_attnum)
-            JOIN pg_attribute attr ON attr.attrelid = t.oid AND attr.attnum = k.col_attnum
-            WHERE attr.attname = 'tenant_id'
-          )
-      LOOP
-        EXECUTE format('DROP INDEX IF EXISTS public.%I CASCADE', idx.index_name);
-      END LOOP;
-    END $$;
-
-    -- Backfill tenant_product_no per tenant (1..N) for any existing rows where it is NULL
-    WITH numbered AS (
-      SELECT id,
-             ROW_NUMBER() OVER (PARTITION BY COALESCE(tenant_id, 1) ORDER BY id ASC) AS rn
-      FROM products
-      WHERE tenant_product_no IS NULL
-    )
-    UPDATE products p
-    SET tenant_product_no = numbered.rn
-    FROM numbered
-    WHERE p.id = numbered.id;
-
-    -- Resolve any legacy duplicate identifiers within the same store (tenant_id) before creating store-wide unique indexes
-    UPDATE products p
-    SET barcode = BTRIM(p.barcode) || '-' || p.id::text
-    WHERE EXISTS (
-      SELECT 1 FROM products p2
-      WHERE COALESCE(p2.tenant_id, 1) = COALESCE(p.tenant_id, 1)
-        AND LOWER(BTRIM(p2.barcode)) = LOWER(BTRIM(p.barcode))
-        AND p2.id < p.id
-    );
-
-    UPDATE products p
-    SET article = UPPER(BTRIM(p.article)) || '-' || p.id::text
-    WHERE p.article IS NOT NULL AND BTRIM(p.article) <> ''
-      AND EXISTS (
-        SELECT 1 FROM products p2
-        WHERE COALESCE(p2.tenant_id, 1) = COALESCE(p.tenant_id, 1)
-          AND LOWER(BTRIM(p2.article)) = LOWER(BTRIM(p.article))
-          AND p2.id < p.id
-      );
-
-    UPDATE products p
-    SET sku = UPPER(BTRIM(p.sku)) || '-' || p.id::text
-    WHERE p.sku IS NOT NULL AND BTRIM(p.sku) <> ''
-      AND EXISTS (
-        SELECT 1 FROM products p2
-        WHERE COALESCE(p2.tenant_id, 1) = COALESCE(p.tenant_id, 1)
-          AND LOWER(BTRIM(p2.sku)) = LOWER(BTRIM(p.sku))
-          AND p2.id < p.id
-      );
-
-    CREATE INDEX IF NOT EXISTS products_tenant_idx ON products(tenant_id);
-    CREATE INDEX IF NOT EXISTS products_tenant_product_no_idx ON products(tenant_id, tenant_product_no);
-    CREATE INDEX IF NOT EXISTS products_brand_idx ON products(brand);
-    CREATE INDEX IF NOT EXISTS products_category_idx ON products(category);
-    CREATE INDEX IF NOT EXISTS products_barcode_idx ON products(barcode);
-    CREATE INDEX IF NOT EXISTS products_sku_idx ON products(sku);
-    CREATE INDEX IF NOT EXISTS products_article_idx ON products(article);
-    CREATE INDEX IF NOT EXISTS products_active_idx ON products(active);
-    CREATE UNIQUE INDEX IF NOT EXISTS products_tenant_barcode_unique_idx
-      ON products (COALESCE(tenant_id, 1), LOWER(BTRIM(barcode)))
-      WHERE barcode IS NOT NULL AND BTRIM(barcode) <> '';
-    CREATE UNIQUE INDEX IF NOT EXISTS products_tenant_article_unique_idx
-      ON products (COALESCE(tenant_id, 1), LOWER(BTRIM(article)))
-      WHERE article IS NOT NULL AND BTRIM(article) <> '';
-    CREATE UNIQUE INDEX IF NOT EXISTS products_tenant_sku_unique_idx
-      ON products (COALESCE(tenant_id, 1), LOWER(BTRIM(sku)))
-      WHERE sku IS NOT NULL AND BTRIM(sku) <> '';
-
-    CREATE TABLE IF NOT EXISTS customers (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      name TEXT NOT NULL,
-      phone TEXT NOT NULL,
-      email TEXT,
-      address TEXT,
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    CREATE INDEX IF NOT EXISTS customers_tenant_idx ON customers(tenant_id);
-    CREATE INDEX IF NOT EXISTS customers_phone_idx ON customers(phone);
-
-    CREATE TABLE IF NOT EXISTS suppliers (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      name TEXT NOT NULL,
-      phone TEXT DEFAULT '',
-      email TEXT DEFAULT '',
-      balance NUMERIC(12, 2) DEFAULT 0.00,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS balance NUMERIC(12, 2) DEFAULT 0.00;
-    CREATE INDEX IF NOT EXISTS suppliers_tenant_idx ON suppliers(tenant_id);
-
-    CREATE TABLE IF NOT EXISTS purchases (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      purchase_number TEXT NOT NULL,
-      supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
-      supplier_name TEXT NOT NULL,
-      purchase_date TEXT NOT NULL,
-      total_amount NUMERIC(12, 2) NOT NULL,
-      paid_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-      payment_status TEXT NOT NULL DEFAULT 'UNPAID',
-      payment_method TEXT DEFAULT 'CASH',
-      notes TEXT,
-      created_by INTEGER NOT NULL REFERENCES users(id),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL;
-    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00;
-    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'UNPAID';
-    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'CASH';
-    ALTER TABLE purchases DROP CONSTRAINT IF EXISTS purchases_purchase_number_key;
-    CREATE INDEX IF NOT EXISTS purchases_tenant_idx ON purchases(tenant_id);
-
-    CREATE TABLE IF NOT EXISTS supplier_payments (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      payment_number TEXT NOT NULL,
-      supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
-      supplier_name TEXT NOT NULL,
-      purchase_id INTEGER REFERENCES purchases(id) ON DELETE SET NULL,
-      amount NUMERIC(12, 2) NOT NULL,
-      payment_date TEXT NOT NULL,
-      payment_method TEXT NOT NULL DEFAULT 'CASH',
-      reference_number TEXT DEFAULT '',
-      notes TEXT DEFAULT '',
-      created_by INTEGER NOT NULL REFERENCES users(id),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE supplier_payments ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE supplier_payments DROP CONSTRAINT IF EXISTS supplier_payments_payment_number_key;
-    DROP INDEX IF EXISTS supplier_payments_number_idx;
-    CREATE INDEX IF NOT EXISTS supplier_payments_tenant_idx ON supplier_payments(tenant_id);
-    CREATE INDEX IF NOT EXISTS supplier_payments_supplier_idx ON supplier_payments(supplier_id);
-    CREATE INDEX IF NOT EXISTS supplier_payments_date_idx ON supplier_payments(payment_date);
-    CREATE INDEX IF NOT EXISTS supplier_payments_number_idx ON supplier_payments(payment_number);
-
-    CREATE TABLE IF NOT EXISTS purchase_items (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      quantity INTEGER NOT NULL,
-      unit_purchase_price NUMERIC(12, 2) NOT NULL,
-      subtotal NUMERIC(12, 2) NOT NULL
-    );
-    ALTER TABLE purchase_items ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-
-    CREATE TABLE IF NOT EXISTS purchase_returns (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      return_number TEXT NOT NULL,
-      purchase_id INTEGER REFERENCES purchases(id) ON DELETE SET NULL,
-      supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
-      supplier_name TEXT NOT NULL,
-      return_date TEXT NOT NULL,
-      total_debit_amount NUMERIC(12, 2) NOT NULL,
-      reason TEXT NOT NULL,
-      notes TEXT,
-      created_by INTEGER NOT NULL REFERENCES users(id),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE purchase_returns ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE purchase_returns DROP CONSTRAINT IF EXISTS purchase_returns_return_number_key;
-    DROP INDEX IF EXISTS purchase_returns_number_idx;
-    CREATE INDEX IF NOT EXISTS purchase_returns_tenant_idx ON purchase_returns(tenant_id);
-    CREATE INDEX IF NOT EXISTS purchase_returns_number_idx ON purchase_returns(return_number);
-    CREATE INDEX IF NOT EXISTS purchase_returns_supplier_idx ON purchase_returns(supplier_id);
-
-    CREATE TABLE IF NOT EXISTS purchase_return_items (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      purchase_return_id INTEGER NOT NULL REFERENCES purchase_returns(id) ON DELETE CASCADE,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      quantity INTEGER NOT NULL,
-      unit_purchase_price NUMERIC(12, 2) NOT NULL,
-      subtotal NUMERIC(12, 2) NOT NULL,
-      defect_type TEXT DEFAULT 'MANUFACTURING_DEFECT'
-    );
-    ALTER TABLE purchase_return_items ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    CREATE INDEX IF NOT EXISTS purchase_return_items_return_idx ON purchase_return_items(purchase_return_id);
-    CREATE INDEX IF NOT EXISTS purchase_return_items_product_idx ON purchase_return_items(product_id);
-
-    CREATE TABLE IF NOT EXISTS sales (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      invoice_number TEXT NOT NULL,
-      customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-      sale_date TEXT NOT NULL,
-      subtotal NUMERIC(12, 2) NOT NULL,
-      discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-      total_amount NUMERIC(12, 2) NOT NULL,
-      payment_method TEXT NOT NULL DEFAULT 'CASH',
-      cash_received NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-      change_given NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-      created_by INTEGER NOT NULL REFERENCES users(id),
-      is_min_price_overridden BOOLEAN NOT NULL DEFAULT false,
-      overridden_by INTEGER REFERENCES users(id),
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE sales ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_invoice_number_key;
-    DROP INDEX IF EXISTS sales_invoice_number_idx;
-    CREATE INDEX IF NOT EXISTS sales_tenant_idx ON sales(tenant_id);
-    CREATE INDEX IF NOT EXISTS sales_invoice_idx ON sales(invoice_number);
-
-    CREATE TABLE IF NOT EXISTS sale_items (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      product_name TEXT NOT NULL,
-      quantity INTEGER NOT NULL,
-      unit_price NUMERIC(12, 2) NOT NULL,
-      discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
-      subtotal NUMERIC(12, 2) NOT NULL,
-      purchase_price NUMERIC(12, 2) NOT NULL
-    );
-    ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-
-    CREATE TABLE IF NOT EXISTS returns (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      return_number TEXT NOT NULL,
-      original_sale_id INTEGER NOT NULL REFERENCES sales(id),
-      customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-      return_date TEXT NOT NULL,
-      total_refund_amount NUMERIC(12, 2) NOT NULL,
-      reason TEXT NOT NULL,
-      created_by INTEGER NOT NULL REFERENCES users(id),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE returns ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    ALTER TABLE returns DROP CONSTRAINT IF EXISTS returns_return_number_key;
-    CREATE INDEX IF NOT EXISTS returns_tenant_idx ON returns(tenant_id);
-
-    CREATE TABLE IF NOT EXISTS return_items (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      return_id INTEGER NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
-      sale_item_id INTEGER NOT NULL REFERENCES sale_items(id),
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      quantity INTEGER NOT NULL,
-      unit_refund_price NUMERIC(12, 2) NOT NULL,
-      subtotal NUMERIC(12, 2) NOT NULL
-    );
-    ALTER TABLE return_items ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-
-    CREATE TABLE IF NOT EXISTS stock_movements (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL DEFAULT 1,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      qty_change INTEGER NOT NULL,
-      prev_stock INTEGER NOT NULL,
-      new_stock INTEGER NOT NULL,
-      movement_type TEXT NOT NULL,
-      reference_id TEXT,
-      user_id INTEGER NOT NULL REFERENCES users(id),
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS tenant_id INTEGER NOT NULL DEFAULT 1;
-    CREATE INDEX IF NOT EXISTS stock_movements_tenant_idx ON stock_movements(tenant_id);
-    CREATE INDEX IF NOT EXISTS stock_movements_product_idx ON stock_movements(product_id);
-    CREATE INDEX IF NOT EXISTS stock_movements_created_at_idx ON stock_movements(created_at);
-  `);
-
+      // 2. Create all indexes independently so an index notice never aborts table creation
+      for (const idxDdl of DATABASE_INDEX_DDL) {
+        await pgClient.exec(idxDdl).catch(() => {});
+      }
     } finally {
       databaseSchemaPromise = null;
     }
@@ -814,7 +439,6 @@ export interface StoreQuickCredential {
 
 export async function ensureTenantStoreUsers(params: {
   tenantId: number;
-  slug: string;
   storeName?: string;
   ownerEmail?: string;
   ownerName?: string;
@@ -830,11 +454,10 @@ export async function ensureTenantStoreUsers(params: {
   cashier: StoreQuickCredential | null;
 }> {
   const tenantId = Number(params.tenantId) || 1;
-  const cleanSlug = (params.slug || 'store').trim().toLowerCase();
-  const storeLabel = (params.storeName || cleanSlug).trim();
+  const storeLabel = (params.storeName || 'Store').trim();
 
   // Determine canonical store-specific emails & default passwords
-  const defaultOwnerEmail = (params.ownerEmail || `admin@${cleanSlug}.com`).trim().toLowerCase();
+  const defaultOwnerEmail = (params.ownerEmail || `admin+${tenantId}@store.com`).trim().toLowerCase();
   const defaultOwnerName = (params.ownerName || params.ownerEmail?.split('@')[0] || `${storeLabel} Owner`).trim();
   const explicitPassword = params.ownerPassword && params.ownerPassword.trim() ? params.ownerPassword.trim() : '';
   const defaultOwnerPassword = explicitPassword || 'admin123';
@@ -864,7 +487,7 @@ export async function ensureTenantStoreUsers(params: {
       verifiedPass = row.quick_password;
     } else {
       const candidates = Array.from(
-        new Set([defaultOwnerPassword, 'admin123', `${cleanSlug}@2026`, 'password123', '123456'])
+        new Set([defaultOwnerPassword, 'admin123', 'password123', '123456'])
       );
       for (const cand of candidates) {
         if (await bcrypt.compare(cand, row.password_hash)) {
@@ -894,12 +517,28 @@ export async function ensureTenantStoreUsers(params: {
       role: 'ADMIN',
     };
   } else {
+    let candidateOwnerEmail = defaultOwnerEmail;
+    const emailConflictRes = await pgClient.query<{ id: number }>(
+      `SELECT id FROM users WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1)) LIMIT 1`,
+      [candidateOwnerEmail]
+    );
+    if (emailConflictRes.rows.length > 0) {
+      if (params.ownerEmail && params.ownerEmail.trim()) {
+        const duplicateEmailError: any = new Error(
+          'This email is already in use. Please use a different email address.'
+        );
+        duplicateEmailError.code = 'EMAIL_ALREADY_EXISTS';
+        throw duplicateEmailError;
+      }
+      candidateOwnerEmail = `admin+${tenantId}@store.com`;
+    }
+
     const ownerHash = await bcrypt.hash(defaultOwnerPassword, 10);
     const createdOwner = await pgClient.query<{ id: number; name: string; email: string }>(
       `INSERT INTO users (tenant_id, name, email, phone, password_hash, quick_password, role, status, active)
        VALUES ($1, $2, $3, $4, $5, $6, 'ADMIN', 'APPROVED', true)
        RETURNING id, name, email`,
-      [tenantId, defaultOwnerName, defaultOwnerEmail, (params.ownerPhone || '').trim(), ownerHash, defaultOwnerPassword]
+      [tenantId, defaultOwnerName, candidateOwnerEmail, (params.ownerPhone || '').trim(), ownerHash, defaultOwnerPassword]
     );
     ownerCred = {
       id: createdOwner.rows[0].id,
@@ -933,7 +572,7 @@ export async function ensureTenantStoreUsers(params: {
     let verifiedPass = row.quick_password || '';
     if (!verifiedPass) {
       const candidates = Array.from(
-        new Set(['admin123', 'cashier123', `${cleanSlug}@cashier`, `${cleanSlug}@2026`, '123456'])
+        new Set(['admin123', 'cashier123', '123456'])
       );
       for (const cand of candidates) {
         if (await bcrypt.compare(cand, row.password_hash)) {
@@ -955,6 +594,19 @@ export async function ensureTenantStoreUsers(params: {
     const cEmail = params.cashierEmail.trim().toLowerCase();
     const cName = (params.cashierName || `${storeLabel} Cashier`).trim();
     const cPhone = (params.cashierPhone || '').trim();
+
+    const existingCashierEmail = await pgClient.query<{ id: number }>(
+      `SELECT id FROM users WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1)) LIMIT 1`,
+      [cEmail]
+    );
+    if (existingCashierEmail.rows.length > 0) {
+      const duplicateEmailError: any = new Error(
+        'This email is already in use. Please use a different email address.'
+      );
+      duplicateEmailError.code = 'EMAIL_ALREADY_EXISTS';
+      throw duplicateEmailError;
+    }
+
     const cashierHash = await bcrypt.hash(cPass, 10);
 
     const createdCashier = await pgClient.query<{ id: number; name: string; email: string }>(
@@ -996,7 +648,7 @@ export async function ensureSaasControlPlane(): Promise<void> {
           `SELECT COUNT(*) as count,
                   (to_regclass('public.users') IS NOT NULL AND to_regclass('public.tenants') IS NOT NULL) as has_core_tables
            FROM deleted_store_requests
-           WHERE requested_slug = '__schema_v9_passwords_superadmin123_admin123__'`
+           WHERE marker_key = '__schema_v10_users_email_unique__'`
         )
         .catch(() => null);
 
@@ -1012,34 +664,22 @@ export async function ensureSaasControlPlane(): Promise<void> {
 
       await ensureDatabaseSchema();
 
-      // 1. Ensure deleted_store_requests tracking table exists
-    await pgClient.exec(`
-      CREATE TABLE IF NOT EXISTS deleted_store_requests (
-        id SERIAL PRIMARY KEY,
-        request_id INTEGER,
-        requested_slug TEXT NOT NULL,
-        deleted_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS deleted_store_requests_slug_idx ON deleted_store_requests(requested_slug);
-    `);
-
-    // One-time cleanup of any previously auto-seeded demo stores ('tj-shoes', 'mystore', 'apex-boots') and demo store requests ('stepup', 'sole-craft')
+      // One-time cleanup of any previously auto-seeded demo store requests
     const seedPurgeCheck = await pgClient.query<{ count: string }>(
-      "SELECT COUNT(*) as count FROM deleted_store_requests WHERE requested_slug = '__seeded_stores_and_requests_removed_v1__'"
+      "SELECT COUNT(*) as count FROM deleted_store_requests WHERE marker_key = '__seeded_stores_and_requests_removed_v1__'"
     );
     if (parseInt(seedPurgeCheck.rows[0]?.count || '0', 10) === 0) {
       // Remove auto-seeded demo store requests
       await pgClient
         .query(
           `DELETE FROM store_requests
-           WHERE LOWER(requested_slug) IN ('stepup', 'sole-craft')
-              OR owner_email IN ('ayesha@stepupfootwear.pk', 'faisal@solecraft.pk')`
+           WHERE owner_email IN ('ayesha@stepupfootwear.pk', 'faisal@solecraft.pk')`
         )
         .catch(() => {});
 
       await pgClient
         .query(
-          `INSERT INTO deleted_store_requests (request_id, requested_slug) VALUES (0, '__seeded_stores_and_requests_removed_v1__')`
+          `INSERT INTO deleted_store_requests (request_id, marker_key) VALUES (0, '__seeded_stores_and_requests_removed_v1__')`
         )
         .catch(() => {});
     }
@@ -1047,7 +687,6 @@ export async function ensureSaasControlPlane(): Promise<void> {
     // 2. Ensure every existing user-created tenant in the database has subscription_plan, subscription dates, and verified Store Owner/Cashier users
     const allTenants = await pgClient.query<{
       id: number;
-      slug: string;
       name: string;
       status: string;
       subscription_plan: string | null;
@@ -1057,7 +696,7 @@ export async function ensureSaasControlPlane(): Promise<void> {
       owner_email: string | null;
       owner_phone: string | null;
     }>(
-      `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
+      `SELECT t.id, t.name, t.status, t.subscription_plan,
               t.subscription_start_date, t.subscription_end_date, t.subscription_status,
               u.email AS owner_email, u.phone AS owner_phone
        FROM tenants t
@@ -1115,7 +754,6 @@ export async function ensureSaasControlPlane(): Promise<void> {
 
       await ensureTenantStoreUsers({
         tenantId: t.id,
-        slug: t.slug,
         storeName: t.name,
         ownerEmail: t.owner_email || undefined,
         ownerPhone: t.owner_phone || undefined,
@@ -1127,26 +765,46 @@ export async function ensureSaasControlPlane(): Promise<void> {
     const superAdminHash = await bcrypt.hash('superadmin123', 10);
     const storeAdminHash = await bcrypt.hash('admin123', 10);
 
-    const existingSuperAdmin = await pgClient.query<{ id: number }>(
-      `SELECT id FROM users WHERE UPPER(COALESCE(role, '')) = 'SUPERADMIN' ORDER BY id ASC LIMIT 1`
+    const existingSuperAdmin = await pgClient.query<{ id: number; password_hash: string; quick_password: string }>(
+      `SELECT id, password_hash, COALESCE(quick_password, '') AS quick_password FROM users WHERE UPPER(COALESCE(role, '')) = 'SUPERADMIN' ORDER BY id ASC LIMIT 1`
     );
     if (existingSuperAdmin.rows.length > 0) {
-      await pgClient.query(
-        `UPDATE users
-         SET password_hash = $1,
-             quick_password = 'superadmin123',
-             status = 'APPROVED',
-             active = true,
-             updated_at = NOW()
-         WHERE UPPER(COALESCE(role, '')) = 'SUPERADMIN'`,
-        [superAdminHash]
-      );
+      const saRow = existingSuperAdmin.rows[0];
+      if (!saRow.password_hash) {
+        await pgClient.query(
+          `UPDATE users
+           SET password_hash = $1,
+               quick_password = 'superadmin123',
+               status = 'APPROVED',
+               active = true,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [superAdminHash, saRow.id]
+        );
+      } else {
+        await pgClient.query(
+          `UPDATE users
+           SET status = 'APPROVED',
+               active = true,
+               updated_at = NOW()
+           WHERE UPPER(COALESCE(role, '')) = 'SUPERADMIN'`
+        );
+      }
     } else {
-      await pgClient.query(
-        `INSERT INTO users (tenant_id, name, email, phone, password_hash, quick_password, role, status, active)
-         VALUES (1, 'Platform SuperAdmin', 'talhah.jan@gmail.com', '+92-300-0000001', $1, 'superadmin123', 'SUPERADMIN', 'APPROVED', true)`,
-        [superAdminHash]
+      const defaultSaEmail = 'talhah.jan@gmail.com';
+      const emailTaken = await pgClient.query<{ id: number }>(
+        `SELECT id FROM users WHERE LOWER(BTRIM(email)) = $1 LIMIT 1`,
+        [defaultSaEmail]
       );
+      const saEmail = emailTaken.rows.length > 0 ? 'superadmin@shoepos.local' : defaultSaEmail;
+      await pgClient
+        .query(
+          `INSERT INTO users (tenant_id, name, email, phone, password_hash, quick_password, role, status, active)
+           VALUES (1, 'Platform SuperAdmin', $1, '+92-300-0000001', $2, 'superadmin123', 'SUPERADMIN', 'APPROVED', true)
+           ON CONFLICT (email) DO NOTHING`,
+          [saEmail, superAdminHash]
+        )
+        .catch(() => {});
     }
 
     await pgClient.query(
@@ -1166,19 +824,18 @@ export async function ensureSaasControlPlane(): Promise<void> {
 
     await syncExpiredTenantSubscriptions();
 
-    // Purge any store_requests that match previously deleted slugs
     await pgClient.query(
       `DELETE FROM store_requests
-       WHERE LOWER(requested_slug) IN (
-         SELECT LOWER(requested_slug)
+       WHERE id IN (
+         SELECT request_id
          FROM deleted_store_requests
-         WHERE requested_slug NOT IN ('__reseed_cleanup_done__', '__seeded_stores_and_requests_removed_v1__', '__schema_v5_ready__', '__schema_v6_talhah_ready__', '__schema_v7_store_unique_identifiers__', '__schema_v8_tenants_deleted_product_ids__', '__schema_v9_passwords_superadmin123_admin123__')
+         WHERE request_id IS NOT NULL AND request_id > 0
        )`
     );
 
     await pgClient
       .query(
-        `INSERT INTO deleted_store_requests (request_id, requested_slug) VALUES (0, '__schema_v9_passwords_superadmin123_admin123__')`
+        `INSERT INTO deleted_store_requests (request_id, marker_key) VALUES (0, '__schema_v10_users_email_unique__')`
       )
       .catch(() => {});
 

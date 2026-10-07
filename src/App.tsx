@@ -4,7 +4,6 @@ import {
   api,
   getAuthToken,
   removeAuthToken,
-  setActiveTenantSlug,
   setActiveTenantId,
   getActiveTenantId,
 } from './services/api.ts';
@@ -228,7 +227,7 @@ export default function App() {
     if (isSuperAdminMode) {
       if (manifestLink) manifestLink.setAttribute('href', '/admin/manifest.webmanifest');
       if (themeMeta) themeMeta.setAttribute('content', '#0F172A');
-    } else if (activeTenant && activeTenant.slug) {
+    } else if (activeTenant && activeTenant.id) {
       if (manifestLink) {
         manifestLink.setAttribute('href', `/api/tenants/manifest?tenantId=${encodeURIComponent(String(activeTenant.id))}`);
       }
@@ -262,7 +261,6 @@ export default function App() {
         if (resolution?.tenant) {
           setActiveTenant(resolution.tenant);
           setActiveTenantId(resolution.tenant.id);
-          setActiveTenantSlug(resolution.tenant.slug);
         }
         return;
       }
@@ -274,7 +272,6 @@ export default function App() {
         setActiveTenant(resolution.tenant);
         if (resolution.tenant) {
           setActiveTenantId(resolution.tenant.id);
-          setActiveTenantSlug(resolution.tenant.slug);
         }
         setSaasMode('TENANT_SUSPENDED');
       } else if (
@@ -285,7 +282,6 @@ export default function App() {
         setActiveTenant(resolution.tenant);
         if (resolution.tenant) {
           setActiveTenantId(resolution.tenant.id);
-          setActiveTenantSlug(resolution.tenant.slug);
         }
         const storedUserRole = (() => {
           try {
@@ -310,7 +306,6 @@ export default function App() {
       } else if (resolution?.tenant) {
         setActiveTenant(resolution.tenant);
         setActiveTenantId(resolution.tenant.id);
-        setActiveTenantSlug(resolution.tenant.slug);
         setSaasMode('TENANT_ACTIVE');
       }
     } catch (err) {
@@ -395,7 +390,7 @@ export default function App() {
           // If switching to a different tenant store than the user's JWT tenant, prompt login for that store (unless SUPERADMIN)
           if (
             tenantIdForInit &&
-            userRes.user.slug &&
+            userRes.user.tenantId &&
             Number(userRes.user.tenantId) !== Number(tenantIdForInit) &&
             dbRole !== 'SUPERADMIN'
           ) {
@@ -542,7 +537,6 @@ export default function App() {
   // Navigate between the shared portal and tenant paths.
   const handleNavigateDomain = async (target: {
     mode: 'LANDING' | 'SUPERADMIN' | 'TENANT' | 'NOT_FOUND' | 'ONBOARDING';
-    slug?: string;
     tenantId?: number;
     authenticated?: boolean;
   }) => {
@@ -550,7 +544,6 @@ export default function App() {
     if (target.mode === 'LANDING') {
       setSaasMode('LANDING');
       setActiveTenant(null);
-      setActiveTenantSlug(null);
       setActiveTenantId(null);
       window.history.pushState({}, '', '/');
       return;
@@ -559,7 +552,6 @@ export default function App() {
     if (target.mode === 'SUPERADMIN') {
       setSaasMode('SUPERADMIN');
       setActiveTenant(null);
-      setActiveTenantSlug(null);
       setActiveTenantId(null);
       window.history.pushState({}, '', '/admin');
       return;
@@ -573,14 +565,13 @@ export default function App() {
     }
 
     if (target.mode === 'ONBOARDING') {
-      const selected = availableTenants.find((tenant) => Number(tenant.id) === Number(target.tenantId) || tenant.slug === target.slug) || activeTenant;
-      const targetId = selected?.id;
+      const selected = availableTenants.find((tenant) => Number(tenant.id) === Number(target.tenantId)) || activeTenant;
+      const targetId = selected?.id || target.tenantId;
       if (!targetId) return;
-      setActiveTenant(selected);
+      if (selected) setActiveTenant(selected);
       setActiveTenantId(targetId);
-      setActiveTenantSlug(selected.slug);
       if (!currentUser) {
-        setStoreLoginTarget(selected);
+        if (selected) setStoreLoginTarget(selected);
         setTenantIdNotice('');
         setGlobalLoginOpen(true);
         setSaasMode('LANDING');
@@ -594,12 +585,11 @@ export default function App() {
     }
 
     if (target.mode === 'TENANT') {
-      const selected = availableTenants.find((tenant) => Number(tenant.id) === Number(target.tenantId) || tenant.slug === target.slug) || activeTenant;
-      const targetId = selected?.id;
+      const selected = availableTenants.find((tenant) => Number(tenant.id) === Number(target.tenantId)) || activeTenant;
+      const targetId = selected?.id || target.tenantId;
       if (!targetId) return;
-      setActiveTenant(selected);
+      if (selected) setActiveTenant(selected);
       setActiveTenantId(targetId);
-      setActiveTenantSlug(selected.slug);
       setSaasMode('TENANT_ACTIVE');
       window.history.pushState({}, '', target.authenticated || isSuperAdmin ? appPathForTab(currentTab) : `/?tenantId=${encodeURIComponent(targetId)}`);
       await initializeApp(targetId, 'TENANT_ACTIVE');
@@ -772,7 +762,7 @@ export default function App() {
           <AuthModal
             companySettings={storeLoginTarget
               ? { ...storeLoginTarget, tenant_id: storeLoginTarget.id, name: storeLoginTarget.name }
-              : { name: 'ShoePOS Store Portal', slug: '' }}
+              : { name: 'ShoePOS Store Portal' }}
             onBack={() => setGlobalLoginOpen(false)}
             onSuccess={(user) => {
               const role = String(user?.role || '').toUpperCase();
@@ -839,8 +829,8 @@ export default function App() {
               setCurrentUser(user);
             }}
             onLogout={handleLogout}
-            onOpenStore={(slug) => handleNavigateDomain({ mode: 'TENANT', slug })}
-            onOpenOnboarding={(slug) => handleNavigateDomain({ mode: 'ONBOARDING', slug })}
+            onOpenStore={(tenantId) => handleNavigateDomain({ mode: 'TENANT', tenantId })}
+            onOpenOnboarding={(tenantId) => handleNavigateDomain({ mode: 'ONBOARDING', tenantId })}
             onTenantsUpdated={() => refreshTenantDirectory('SUPERADMIN')}
           />
         )
@@ -1029,7 +1019,7 @@ export default function App() {
                 <main className="flex-1 min-w-0 overflow-x-hidden bg-[#F8FAFC] dark:bg-[#0A0E1A] transition-colors">
                   <AnimatePresence mode="wait">
                     <motion.div
-                      key={`${activeTenant?.slug || 'default'}-${currentTab}`}
+                      key={`${activeTenant?.id || 'default'}-${currentTab}`}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
@@ -1139,7 +1129,7 @@ export default function App() {
                           onOpenInstallWizard={() => {
                             handleNavigateDomain({
                               mode: 'ONBOARDING',
-                              slug: activeTenant?.slug || 'mystore',
+                              tenantId: activeTenant?.id,
                             });
                           }}
                         />

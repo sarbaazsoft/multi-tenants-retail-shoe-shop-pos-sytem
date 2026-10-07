@@ -73,9 +73,7 @@ async function ensureTenantSubscriptionPopulated(tenantId: number): Promise<any>
 
     let needsUpdate = false;
 
-    const plan = normalizeSubscriptionPlan(
-      t.subscription_plan || (t.slug === 'mystore' || t.slug === 'apex-boots' ? '6_MONTHS' : 'YEARLY')
-    );
+    const plan = normalizeSubscriptionPlan(t.subscription_plan || 'YEARLY');
     if (t.subscription_plan !== plan) {
       needsUpdate = true;
     }
@@ -122,26 +120,16 @@ async function ensureTenantSubscriptionPopulated(tenantId: number): Promise<any>
   }
 }
 
-async function getPendingRenewalRequest(tenantId: number, slug?: string): Promise<any | null> {
+async function getPendingRenewalRequest(tenantId: number): Promise<any | null> {
   try {
-    await pgClient.exec(`
-      ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS request_type TEXT NOT NULL DEFAULT 'NEW_STORE';
-      ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
-      ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS provisioned_tenant_id INTEGER;
-    `).catch(() => {});
-
-    const cleanSlug = String(slug || '').trim().toLowerCase();
     const res = await pgClient.query(
-      `SELECT id, store_name, requested_slug, owner_name, owner_email, owner_phone, plan, request_type, notes, status, provisioned_tenant_id, created_at, updated_at
+      `SELECT id, store_name, owner_email, owner_phone, plan, request_type, notes, status, provisioned_tenant_id, created_at, updated_at
        FROM store_requests
        WHERE status = 'PENDING'
-         AND (
-           provisioned_tenant_id = $1
-           OR ($2 != '' AND LOWER(requested_slug) = LOWER($2))
-         )
+         AND provisioned_tenant_id = $1
        ORDER BY id DESC
        LIMIT 1`,
-      [tenantId, cleanSlug]
+      [tenantId]
     );
     return res.rows[0] || null;
   } catch {
@@ -210,7 +198,6 @@ function formatSettingsResponse(s: any, tenantRow?: any, pendingRenewalRequest?:
     return {
       id: s.id,
       tenantId: s.tenant_id || tenantRow?.id || 1,
-      slug: tenantRow?.slug || '',
       tenantStatus: tenantRow?.status || 'ACTIVE',
     subscriptionPlan: subInfo.subscriptionPlan,
     subscription_plan: subInfo.subscriptionPlan,
@@ -285,11 +272,10 @@ router.get('/subscription', async (req: Request, res: Response) => {
     await ensureSettingsPricingColumns();
     const tenantId = await resolvePublicOrAuthTenantId(req);
     const tenantRow = await ensureTenantSubscriptionPopulated(tenantId);
-    const pendingRenewal = await getPendingRenewalRequest(tenantRow?.id || tenantId, tenantRow?.slug);
+    const pendingRenewal = await getPendingRenewalRequest(tenantRow?.id || tenantId);
     const subscriptionInfo = buildSubscriptionInfo(tenantRow, pendingRenewal);
     return res.json({
       tenantId: tenantRow?.id || tenantId,
-      slug: tenantRow?.slug || '',
       storeName: tenantRow?.name || 'Retail Store',
       pendingRenewalRequest: pendingRenewal,
       subscriptionInfo,
@@ -298,7 +284,6 @@ router.get('/subscription', async (req: Request, res: Response) => {
     const fallbackSub = buildSubscriptionInfo(null, null);
     return res.status(200).json({
       tenantId: 1,
-      slug: '',
       storeName: 'Retail Store',
       pendingRenewalRequest: null,
       subscriptionInfo: fallbackSub,
@@ -337,31 +322,19 @@ router.post('/renew-subscription', async (req: Request, res: Response) => {
       ? `[RENEWAL REQUEST • ${planLabel}] ${customNote}`
       : `Subscription renewal/extension request (${planLabel}) for store ${tenantRow.name}`;
 
-    const storeName = String(tenantRow.name || tenantRow.slug).trim();
-    const ownerEmail = String(ownerUser.email || cs.email || `admin@${tenantRow.slug}.com`).trim().toLowerCase();
+    const storeName = String(tenantRow.name || 'Retail Store').trim();
+    const ownerEmail = String(ownerUser.email || cs.email || `admin+${tenantRow.id}@store.com`).trim().toLowerCase();
     const ownerPhone = String(ownerUser.phone || cs.phone || '').trim();
     const businessAddress = String(cs.address || '').trim();
-
-    await pgClient.exec(`
-      ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS request_type TEXT NOT NULL DEFAULT 'NEW_STORE';
-      ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
-      ALTER TABLE store_requests ADD COLUMN IF NOT EXISTS provisioned_tenant_id INTEGER;
-      ALTER TABLE store_requests DROP COLUMN IF EXISTS owner_name;
-    `).catch(() => {});
-
-    // Clear any prior deletion tombstone for this store slug when a new renewal request is submitted
-    await pgClient
-      .query('DELETE FROM deleted_store_requests WHERE LOWER(requested_slug) = LOWER($1)', [tenantRow.slug])
-      .catch(() => {});
 
     // Check if a PENDING renewal request already exists for this store
     const existingPending = await pgClient.query<any>(
       `SELECT * FROM store_requests
        WHERE status = 'PENDING'
-         AND (provisioned_tenant_id = $1 OR LOWER(requested_slug) = LOWER($2))
+         AND provisioned_tenant_id = $1
        ORDER BY id DESC
        LIMIT 1`,
-      [tenantRow.id, tenantRow.slug]
+      [tenantRow.id]
     );
 
     let renewalRow: any;
@@ -392,14 +365,13 @@ router.post('/renew-subscription', async (req: Request, res: Response) => {
     } else {
       const insertedReq = await pgClient.query<any>(
         `INSERT INTO store_requests (
-           store_name, requested_slug, owner_email, owner_phone,
+           store_name, owner_email, owner_phone,
            business_address, plan, request_type, notes, status, provisioned_tenant_id, created_at, updated_at
          )
-         VALUES ($1, $2, $3, $4, $5, $6, 'RENEWAL', $7, 'PENDING', $8, NOW(), NOW())
+         VALUES ($1, $2, $3, $4, $5, 'RENEWAL', $6, 'PENDING', $7, NOW(), NOW())
          RETURNING *`,
         [
           storeName,
-          tenantRow.slug,
           ownerEmail,
           ownerPhone,
           businessAddress,
@@ -435,7 +407,7 @@ router.get('/', async (req: Request, res: Response) => {
       pgClient.query('SELECT * FROM company_settings WHERE tenant_id = $1 LIMIT 1', [tenantId]),
       ensureTenantSubscriptionPopulated(tenantId),
     ]);
-    const pendingRenewal = await getPendingRenewalRequest(tenantRow?.id || tenantId, tenantRow?.slug);
+    const pendingRenewal = await getPendingRenewalRequest(tenantRow?.id || tenantId);
 
     if (result.rows.length === 0) {
       const fallback = await pgClient.query('SELECT * FROM company_settings ORDER BY id ASC LIMIT 1');
@@ -457,7 +429,6 @@ router.get('/', async (req: Request, res: Response) => {
       settings: {
         id: 0,
         tenantId: 1,
-        slug: '',
         subscriptionPlan: fallbackSub.subscriptionPlan,
         subscription_plan: fallbackSub.subscriptionPlan,
         subscriptionStartDate: fallbackSub.subscriptionStartDate,

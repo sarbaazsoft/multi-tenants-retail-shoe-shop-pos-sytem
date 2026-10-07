@@ -12,7 +12,6 @@ export interface TenantRouteResolution {
   rewrittenPath: string;
   tenant: {
     id: number;
-    slug: string;
     name: string;
     status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
     subscriptionPlan: '6_MONTHS' | 'YEARLY' | string;
@@ -157,7 +156,6 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
 
   const tenantRes = await pgClient.query<{
     id: number;
-    slug: string;
     name: string;
     status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
     subscription_plan: string;
@@ -172,7 +170,7 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
     currency: string;
     onboarding_completed: boolean;
   }>(
-    `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
+    `SELECT t.id, t.name, t.status, t.subscription_plan,
             t.subscription_start_date, t.subscription_end_date, t.subscription_status,
             t.theme_color, t.background_color, t.onboarding_completed,
             COALESCE(NULLIF(cs.logo, ''), '/pwa-512x512.png') AS logo_url,
@@ -196,9 +194,7 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
   }
 
   const row = tenantRes.rows[0];
-  const effectivePlan = normalizeSubscriptionPlan(
-    row.subscription_plan || (row.slug === 'mystore' || row.slug === 'apex-boots' ? '6_MONTHS' : 'YEARLY')
-  );
+  const effectivePlan = normalizeSubscriptionPlan(row.subscription_plan || 'YEARLY');
   const effectiveStartDt = row.subscription_start_date ? new Date(row.subscription_start_date) : new Date();
   const effectiveEndDt = row.subscription_end_date
     ? new Date(row.subscription_end_date)
@@ -237,7 +233,6 @@ export async function resolveTenantContext(req: Request): Promise<TenantRouteRes
 
   const tenant = {
     id: row.id,
-    slug: row.slug,
     name: row.name,
     status: row.status,
     subscriptionPlan: effectivePlan,

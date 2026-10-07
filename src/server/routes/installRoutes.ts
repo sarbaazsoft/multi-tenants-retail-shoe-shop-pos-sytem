@@ -3,7 +3,12 @@ import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pgClient, dbInfo, isStandardPostgres } from '../../db/index.ts';
-import { dropAllTables, ensureDatabaseSchema } from '../../db/schemaInit.ts';
+import {
+  dropAllTables,
+  ensureDatabaseSchema,
+  REQUIRED_DATABASE_TABLES,
+  resetSaasControlPlaneState,
+} from '../../db/schemaInit.ts';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'shoe-pos-super-secure-jwt-secret-key-2026';
 
@@ -47,11 +52,7 @@ export async function checkInstallationStatus(): Promise<InstallationStatus> {
     await pgClient.query('SELECT 1');
 
     // 2. Authoritative check whether tables exist in the database WITHOUT creating them
-    const requiredTables = [
-      'tenants', 'store_requests', 'deleted_store_requests', 'users', 'password_reset_tokens', 'company_settings', 'brands', 'categories',
-      'products', 'customers', 'suppliers', 'sales', 'sale_items', 'returns', 'return_items', 'purchases',
-      'purchase_items', 'purchase_returns', 'purchase_return_items', 'supplier_payments', 'stock_movements',
-    ];
+    const requiredTables = [...REQUIRED_DATABASE_TABLES];
     const tableCheck = await pgClient.query<{ table_name: string; present: boolean }>(
       `SELECT required.table_name, to_regclass('public.' || quote_ident(required.table_name)) IS NOT NULL AS present
        FROM unnest($1::text[]) AS required(table_name)`,
@@ -249,6 +250,8 @@ router.get('/status', async (_req: Request, res: Response) => {
 // =========================================================================
 router.post('/bootstrap', async (req: Request, res: Response) => {
   try {
+    await pgClient.waitReady;
+
     const before = await checkInstallationStatus();
     if (before.installed) {
       return res.status(409).json({ error: 'Installation is already complete.' });
@@ -261,23 +264,31 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Name, email, and a password of at least 8 characters are required.' });
     }
 
+    // 1. Reset any cached state and load the full database schema so all tables (including users) exist first
+    resetSaasControlPlaneState();
     await ensureDatabaseSchema();
-    await pgClient.exec(`
-      CREATE TABLE IF NOT EXISTS deleted_store_requests (
-        id SERIAL PRIMARY KEY,
-        request_id INTEGER,
-        requested_slug TEXT NOT NULL,
-        deleted_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS deleted_store_requests_slug_idx ON deleted_store_requests(requested_slug);
-    `);
 
+    // 2. Verify that all required tables (especially users) exist before running any query on users
+    const schemaCheck = await pgClient.query<{ table_name: string; present: boolean }>(
+      `SELECT required.table_name, to_regclass('public.' || quote_ident(required.table_name)) IS NOT NULL AS present
+       FROM unnest($1::text[]) AS required(table_name)`,
+      [[...REQUIRED_DATABASE_TABLES]]
+    );
+    const missingAfterSchema = schemaCheck.rows.filter((r) => !r.present).map((r) => r.table_name);
+    if (missingAfterSchema.length > 0) {
+      return res.status(500).json({
+        error: `Failed to initialize required database tables: ${missingAfterSchema.join(', ')}`,
+        missingTables: missingAfterSchema,
+      });
+    }
+
+    // 3. Create the initial SuperAdmin account in the newly verified users table
     const superadmins = await pgClient.query<{ id: number }>(
       `SELECT id FROM users WHERE UPPER(role) = 'SUPERADMIN' AND active = true AND status = 'APPROVED' ORDER BY id ASC LIMIT 1`
     );
     if (superadmins.rows.length === 0) {
       const existingEmail = await pgClient.query<{ id: number }>(
-        `SELECT id FROM users WHERE LOWER(BTRIM(email)) = $1 LIMIT 1`,
+        `SELECT id FROM users WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1)) LIMIT 1`,
         [email]
       );
       if (existingEmail.rows.length > 0) {
@@ -285,11 +296,20 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
       }
       const passwordHash = await bcrypt.hash(password, 12);
       await pgClient.query(
-        `INSERT INTO users (tenant_id, name, email, password_hash, role, status, active)
-         VALUES (1, $1, $2, $3, 'SUPERADMIN', 'APPROVED', true)`,
-        [name, email, passwordHash]
+        `INSERT INTO users (tenant_id, name, email, phone, password_hash, quick_password, role, status, active)
+         VALUES (1, $1, $2, '', $3, $4, 'SUPERADMIN', 'APPROVED', true)`,
+        [name, email, passwordHash, password]
       );
     }
+
+    // 4. Record schema initialization markers so control-plane startup knows the schema is ready
+    await pgClient
+      .query(
+        `INSERT INTO deleted_store_requests (request_id, marker_key)
+         VALUES (0, '__seeded_stores_and_requests_removed_v1__'),
+                (0, '__schema_v10_users_email_unique__')`
+      )
+      .catch(() => {});
 
     const after = await checkInstallationStatus();
     if (!after.installed) {

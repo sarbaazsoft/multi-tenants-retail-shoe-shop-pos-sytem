@@ -41,7 +41,7 @@ interface SuperAdminReportsViewProps {
   recentTransactions: SuperAdminRecentTransaction[];
   loading: boolean;
   onRefresh: () => void;
-  onOpenStore: (slug: string) => void;
+  onOpenStore: (tenantId: number) => void;
 }
 
 type ReportSubTab = 'overview' | 'store_leaderboard' | 'top_skus' | 'sales_ledger';
@@ -921,7 +921,7 @@ export const SuperAdminReportsView: React.FC<SuperAdminReportsViewProps> = ({
                             <div className="min-w-0">
                               <button
                                 type="button"
-                                onClick={() => onOpenStore(st.slug)}
+                                onClick={() => onOpenStore(st.id)}
                                 className="font-bold text-slate-900 dark:text-slate-100 hover:text-purple-600 dark:hover:text-purple-300 transition truncate block text-left cursor-pointer"
                               >
                                 {st.name}
@@ -1102,7 +1102,7 @@ export const SuperAdminReportsView: React.FC<SuperAdminReportsViewProps> = ({
                         <td className="py-2.5 px-3">
                           <button
                             type="button"
-                            onClick={() => onOpenStore(tx.storeSlug)}
+                            onClick={() => tx.tenantId && onOpenStore(tx.tenantId)}
                             className="font-bold text-slate-800 dark:text-slate-200 hover:text-purple-600 dark:hover:text-purple-300 cursor-pointer"
                           >
                             {tx.storeName}
@@ -1253,7 +1253,7 @@ export const SuperAdminReportsView: React.FC<SuperAdminReportsViewProps> = ({
                         <td className="py-3 px-4 text-center">
                           <button
                             type="button"
-                            onClick={() => onOpenStore(st.slug)}
+                            onClick={() => onOpenStore(st.id)}
                             className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-purple-900/40 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-purple-300 rounded-lg transition inline-flex items-center space-x-1 font-semibold text-[11px] px-2.5 cursor-pointer"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
@@ -1338,7 +1338,7 @@ export const SuperAdminReportsView: React.FC<SuperAdminReportsViewProps> = ({
                       <td className="py-3 px-4">
                         <button
                           type="button"
-                          onClick={() => onOpenStore(item.storeSlug)}
+                          onClick={() => onOpenStore(item.tenantId)}
                           className="font-bold text-blue-600 dark:text-cyan-400 hover:underline cursor-pointer"
                         >
                           {item.storeName}
@@ -1436,7 +1436,7 @@ export const SuperAdminReportsView: React.FC<SuperAdminReportsViewProps> = ({
                       <td className="py-3 px-4">
                         <button
                           type="button"
-                          onClick={() => onOpenStore(tx.storeSlug)}
+                          onClick={() => tx.tenantId && onOpenStore(tx.tenantId)}
                           className="font-bold text-slate-800 dark:text-slate-100 hover:text-purple-600 dark:hover:text-purple-300 cursor-pointer"
                         >
                           {tx.storeName}

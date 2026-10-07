@@ -12,7 +12,6 @@ const BROADCAST_CHANNEL_NAME = 'pos_background_sync_channel';
 let cachedAuthContext = {
   token: null,
   tenantId: null,
-  storeSubdomain: null,
 };
 
 let isSwSyncing = false;
@@ -61,7 +60,6 @@ function openOfflineDB() {
         const salesStore = db.createObjectStore(STORE_SALES, { keyPath: 'clientTxId' });
         salesStore.createIndex('status', 'status', { unique: false });
         salesStore.createIndex('createdAt', 'createdAt', { unique: false });
-        salesStore.createIndex('storeSubdomain', 'storeSubdomain', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -190,10 +188,6 @@ async function processOfflineQueueFromSW(triggerSource) {
         if (targetTenantId) {
           headers['X-Tenant-Id'] = String(targetTenantId);
         }
-        const targetSubdomain = sale.storeSubdomain || cachedAuthContext.storeSubdomain;
-        if (targetSubdomain) {
-          headers['X-Store-Subdomain'] = String(targetSubdomain);
-        }
 
         const payload = {
           clientTxId: sale.clientTxId,
@@ -294,8 +288,6 @@ self.addEventListener('message', (event) => {
     cachedAuthContext = {
       token: data.token || cachedAuthContext.token,
       tenantId: data.tenantId !== undefined ? data.tenantId : cachedAuthContext.tenantId,
-      storeSubdomain:
-        data.storeSubdomain !== undefined ? data.storeSubdomain : cachedAuthContext.storeSubdomain,
     };
     return;
   }
@@ -304,7 +296,6 @@ self.addEventListener('message', (event) => {
     cachedAuthContext = {
       token: null,
       tenantId: null,
-      storeSubdomain: null,
     };
     return;
   }

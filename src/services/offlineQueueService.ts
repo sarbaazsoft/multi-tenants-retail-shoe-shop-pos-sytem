@@ -9,7 +9,6 @@ import {
   updateOfflineSaleStatus,
   deleteOfflineSale,
   cacheCatalogOffline,
-  resolveActiveStoreSubdomain,
   resolveActiveTenantId,
 } from '../utils/offlineDb.ts';
 
@@ -334,14 +333,12 @@ class OfflineQueueService {
    * Save an offline sale to IndexedDB and register Service Worker Background Sync
    */
   public async enqueueSale(sale: Omit<QueuedSale, 'clientTxId' | 'createdAt' | 'status'>): Promise<QueuedSale> {
-    const storeSubdomain = resolveActiveStoreSubdomain();
     const tenantId = resolveActiveTenantId(sale.tenantId);
     const authToken = getAuthToken() || sale.authToken;
-    const prefix = tenantId ? `T${tenantId}` : storeSubdomain.toUpperCase();
+    const prefix = tenantId ? `T${tenantId}` : 'OFF';
     const clientTxId = `OFFLINE-${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
     const queued: QueuedSale = {
       ...sale,
-      storeSubdomain,
       ...(tenantId ? { tenantId } : {}),
       ...(authToken ? { authToken } : {}),
       clientTxId,
@@ -349,7 +346,7 @@ class OfflineQueueService {
       status: 'PENDING',
     };
 
-    await queueOfflineSale(queued, storeSubdomain);
+    await queueOfflineSale(queued, tenantId);
     await this.registerBackgroundSync();
     await this.notify();
 

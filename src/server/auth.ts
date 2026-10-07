@@ -15,8 +15,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'shoe-pos-super-secure-jwt-secret-k
 export interface AuthUser {
   id: number;
   tenantId: number;
-  slug: string;
-  storeSubdomain?: string;
   name: string;
   email: string;
   phone?: string;
@@ -29,7 +27,6 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthUser;
   tenantContext?: {
     id: number;
-    slug: string;
     name: string;
     status: string;
     themeColor: string;
@@ -40,27 +37,23 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Generates a signed JWT containing `tenantId`, `role`, `slug`, and `storeSubdomain` in the payload.
+ * Generates a signed JWT containing `tenantId` and `role` in the payload.
  */
 export function generateToken(user: {
   id: number;
   tenantId?: number;
-  slug?: string;
   name: string;
   email: string;
   role: 'SUPERADMIN' | 'ADMIN' | 'CASHIER' | string;
   status: 'PENDING' | 'APPROVED' | string;
 }): string {
   const tenantId = Number(user.tenantId) > 0 ? Number(user.tenantId) : 1;
-  const slug = (user.slug || '').toLowerCase().trim();
   const role = (user.role || 'CASHIER').toUpperCase();
 
   return jwt.sign(
     {
       id: user.id,
       tenantId,
-      slug,
-      storeSubdomain: slug,
       name: user.name,
       email: user.email,
       role,
@@ -179,27 +172,21 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       resolvedTenantId = activeRouteTid;
     }
 
-    let resolvedSlug =
-      (req as any).tenantResolution?.tenant?.slug ||
-      String(decoded.storeSubdomain || decoded.slug || '').toLowerCase();
-
     // Real-time tenant suspension and subscription expiry enforcement (except for global SUPERADMIN)
     if (resolvedRole !== 'SUPERADMIN') {
       try {
         const tenantCheck = await pgClient.query<{
           id: number;
-          slug: string;
           status: string;
           name: string;
           subscription_end_date: Date | string | null;
           subscription_status: string | null;
         }>(
-          'SELECT id, slug, status, name, subscription_end_date, subscription_status FROM tenants WHERE id = $1 LIMIT 1',
+          'SELECT id, status, name, subscription_end_date, subscription_status FROM tenants WHERE id = $1 LIMIT 1',
           [resolvedTenantId]
         );
         if (tenantCheck.rows.length > 0) {
           const tRow = tenantCheck.rows[0];
-          resolvedSlug = tRow.slug || resolvedSlug;
 
           if (
             Number.isInteger(activeRouteTid) &&
@@ -207,7 +194,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
             tRow.id !== activeRouteTid
           ) {
             return res.status(401).json({
-              error: `Cross-store session rejected: Your credentials belong to store "${tRow.slug}". Please sign in to the active store.`,
+              error: `Cross-store session rejected: Your credentials belong to store "${tRow.name}". Please sign in to the active store.`,
               code: 'CROSS_STORE_TOKEN_REJECTED',
             });
           }
@@ -239,7 +226,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
               return res.status(403).json({
                 error: 'Your subscription key has expired. Please contact support to renew.',
                 code: 'SUBSCRIPTION_EXPIRED',
-                tenantSlug: tRow.slug,
+                tenantId: tRow.id,
               });
             }
           }
@@ -252,7 +239,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
             return res.status(423).json({
               error: `Store Suspended: Access to "${tRow.name}" has been suspended by platform administration.`,
               code: 'TENANT_SUSPENDED',
-              tenantSlug: tRow.slug,
+              tenantId: tRow.id,
             });
           }
 
@@ -270,8 +257,6 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     req.user = {
       id: row.id,
       tenantId: resolvedTenantId,
-      slug: resolvedSlug,
-      storeSubdomain: resolvedSlug,
       name: row.name,
       email: row.email,
       phone: row.phone || '',

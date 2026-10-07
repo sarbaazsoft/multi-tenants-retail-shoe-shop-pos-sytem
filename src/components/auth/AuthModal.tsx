@@ -50,15 +50,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [rememberMe, setRememberMe] = useState(true);
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [dispatchedResetLink, setDispatchedResetLink] = useState<string | null>(null);
-  const [emailPreviewUrl, setEmailPreviewUrl] = useState<string | null>(null);
-  const [copiedResetLink, setCopiedResetLink] = useState(false);
-  const [copiedResetToken, setCopiedResetToken] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
-  const [matchingStores, setMatchingStores] = useState<Array<{ tenantId: number; slug: string; name: string }>>([]);
+  const [matchingStores, setMatchingStores] = useState<Array<{ tenantId: number; name: string }>>([]);
   const [forgotEmailTouched, setForgotEmailTouched] = useState(false);
 
   const trimmedEmail = email.trim();
@@ -109,8 +105,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setPassword('');
     setErrorMessage(null);
     setInfoMessage(null);
-    setDispatchedResetLink(null);
-    setEmailPreviewUrl(null);
     setMatchingStores([]);
   }, [activeTenantId]);
 
@@ -144,7 +138,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleStoreChoice = async (store: { tenantId: number; slug: string; name: string }) => {
+  const handleStoreChoice = async (store: { tenantId: number; name: string }) => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
@@ -173,47 +167,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
     setInfoMessage(null);
-    setDispatchedResetLink(null);
-    setEmailPreviewUrl(null);
     try {
       const res = await api.auth.sendResetLink({
         email: trimmedEmail,
         tenantId: activeTenantId,
         origin: window.location.origin,
       });
-      if (res.resetLink) {
-        setDispatchedResetLink(res.resetLink);
-      }
-      if (res.resetToken) {
-        setResetToken(res.resetToken);
-      }
-      if (res.emailPreviewUrl) {
-        setEmailPreviewUrl(res.emailPreviewUrl);
-      }
+      setResetToken('');
       setInfoMessage(
         res.message ||
-          `Password reset token and link have been sent by email to ${trimmedEmail}.`
+          `Password reset token and link have been sent by email to ${trimmedEmail}. Please check your inbox and enter the verification token below.`
       );
+      setTab('reset');
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to send password reset email.');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleOpenResetLink = (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    if (dispatchedResetLink) {
-      try {
-        const parsed = new URL(dispatchedResetLink, window.location.origin);
-        const tokenFromLink = parsed.searchParams.get('resetToken') || resetToken;
-        if (tokenFromLink) setResetToken(tokenFromLink);
-        window.history.replaceState({}, '', `${parsed.pathname}${parsed.search}`);
-      } catch {}
-    }
-    setErrorMessage(null);
-    setInfoMessage('Reset link opened. Enter your new password below.');
-    setTab('reset');
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -232,7 +202,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setResetToken('');
       setNewPassword('');
       setPassword('');
-      setDispatchedResetLink(null);
       const searchParams = new URLSearchParams(window.location.search);
       if (searchParams.has('resetToken')) {
         searchParams.delete('resetToken');
@@ -586,80 +555,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       )}
                     </div>
                   </div>
-
-                  {dispatchedResetLink && (
-                    <div className="p-3.5 rounded-xl bg-purple-50/90 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800/80 space-y-2.5 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-purple-900 dark:text-purple-200">
-                          Email Dispatched with Token &amp; Link
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(dispatchedResetLink).catch(() => {});
-                            setCopiedResetLink(true);
-                            setTimeout(() => setCopiedResetLink(false), 2000);
-                          }}
-                          className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-700 text-[10px] font-bold text-purple-700 dark:text-purple-300 hover:bg-purple-100 cursor-pointer"
-                        >
-                          {copiedResetLink ? 'Copied Link!' : 'Copy Link'}
-                        </button>
-                      </div>
-
-                      {resetToken && (
-                        <div className="p-2 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-purple-200/70 dark:border-purple-800/60 flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-purple-300/70">
-                              Email Reset Token
-                            </div>
-                            <div className="font-mono font-bold text-[11px] text-purple-700 dark:text-purple-200 truncate">
-                              {resetToken}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard?.writeText(resetToken).catch(() => {});
-                              setCopiedResetToken(true);
-                              setTimeout(() => setCopiedResetToken(false), 2000);
-                            }}
-                            className="px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-200 text-[10px] font-bold shrink-0 cursor-pointer"
-                          >
-                            {copiedResetToken ? 'Copied!' : 'Copy Token'}
-                          </button>
-                        </div>
-                      )}
-
-                      <a
-                        href={dispatchedResetLink}
-                        onClick={handleOpenResetLink}
-                        className="block p-2 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-purple-200/70 dark:border-purple-800/60 font-mono text-[11px] text-purple-700 dark:text-purple-300 hover:underline break-all"
-                      >
-                        {dispatchedResetLink}
-                      </a>
-
-                      {emailPreviewUrl && (
-                        <a
-                          href={emailPreviewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <Mail className="w-3.5 h-3.5" />
-                          <span>View Sent Email in Webmail Inbox</span>
-                        </a>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={handleOpenResetLink}
-                        className="w-full py-2 px-3 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <KeyRound className="w-3.5 h-3.5" />
-                        <span>Open Reset Link &amp; Choose New Password</span>
-                      </button>
-                    </div>
-                  )}
 
                   <div className="flex gap-3 pt-2">
                     <button

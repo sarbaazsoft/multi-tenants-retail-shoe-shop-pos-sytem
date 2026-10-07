@@ -4,7 +4,6 @@ export type UserStatus = 'PENDING' | 'APPROVED';
 export interface User {
   id: number;
   tenantId?: number;
-  slug?: string;
   tenantName?: string;
   name: string;
   email: string;
@@ -20,7 +19,6 @@ export type SubscriptionStatus = 'ACTIVE' | 'EXPIRED' | 'SUSPENDED';
 
 export interface TenantInfo {
   id: number;
-  slug: string;
   name: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
   subscriptionPlan?: SubscriptionPlan;
@@ -40,7 +38,6 @@ export interface TenantInfo {
 
 export interface SuperAdminStoreRow {
   id: number;
-  slug: string;
   name: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
   subscriptionPlan: SubscriptionPlan;
@@ -77,7 +74,6 @@ export interface SuperAdminReportSku {
   id: number;
   tenantId: number;
   storeName: string;
-  storeSlug: string;
   currency: string;
   productName: string;
   sku: string;
@@ -101,10 +97,16 @@ export interface SuperAdminSevenDayPoint {
 }
 
 export interface SuperAdminRecentTransaction {
+  id?: number;
+  tenantId?: number;
+  invoiceNumber?: string;
+  saleDate?: string;
+  cashierName?: string;
+  paymentMethod?: string;
+  totalAmount?: number;
   type: string;
   reference: string;
   storeName: string;
-  storeSlug: string;
   customerName: string;
   amount: number;
   currency: string;
@@ -124,10 +126,10 @@ export interface SuperAdminReportBreakdown {
 export interface StoreRequestRecord {
   id: number;
   store_name: string;
-  requested_slug: string;
   owner_email: string;
   owner_phone: string;
   plan: string;
+  provisioned_tenant_id?: number | null;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   created_at: string;
 }
@@ -137,7 +139,6 @@ export type PricingPolicy = 'FIXED' | 'NEGOTIABLE';
 export interface CompanySettings {
   id: number;
   tenantId?: number;
-  slug?: string;
   tenantStatus?: 'ACTIVE' | 'SUSPENDED' | 'EXPIRED';
   subscriptionPlan?: SubscriptionPlan;
   subscriptionStartDate?: string;

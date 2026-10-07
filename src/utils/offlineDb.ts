@@ -15,7 +15,6 @@ export interface QueuedSaleItem {
 
 export interface QueuedSale {
   clientTxId: string; // Unique local identifier e.g. "OFFLINE-1726578000-abcd"
-  storeSubdomain?: string; // Strict store subdomain binding
   tenantId?: number | null;
   createdAt: string; // ISO date string when cashier pressed Complete Sale
   items: QueuedSaleItem[];
@@ -58,8 +57,6 @@ const STORE_SALES = 'offline_sales_queue';
 const STORE_CATALOG_LEGACY = 'cached_products';
 const STORE_CATALOG = 'cached_products_by_store';
 
-const RESERVED_SLUGS = new Set(['www', 'admin', 'superadmin', 'landing', 'root']);
-
 function decodeJwtPayload(token: string): any | null {
   try {
     const parts = token.split('.');
@@ -92,7 +89,6 @@ function parseValidTenantId(value: unknown): number | null {
 
 /**
  * Resolves the current authenticated tenantId for offline product cache isolation.
- * Never uses hostname, subdomain, domain, or URL-derived store identifiers.
  */
 export function resolveActiveTenantId(explicitTenantId?: number | string | null): number | null {
   const explicit = parseValidTenantId(explicitTenantId);
@@ -203,68 +199,6 @@ export function verifyOfflineTenantId(explicitTenantId?: number | string | null)
 }
 
 /**
- * Resolves the active store from the explicit or saved selection for offline sales queue.
- */
-export function resolveActiveStoreSubdomain(explicitSlug?: string | null): string {
-  if (explicitSlug && typeof explicitSlug === 'string') {
-    const clean = explicitSlug.trim().toLowerCase();
-    if (clean && !RESERVED_SLUGS.has(clean)) {
-      return clean;
-    }
-  }
-
-  if (typeof localStorage !== 'undefined') {
-    const activeSlug = localStorage.getItem('shoe_pos_active_tenant_slug');
-    if (activeSlug && !RESERVED_SLUGS.has(activeSlug.trim().toLowerCase())) {
-      return activeSlug.trim().toLowerCase();
-    }
-  }
-
-  return 'default';
-}
-
-/**
- * Verifies that the current authenticated store user is allowed to access/modify
- * the offline sales queue for the target store subdomain.
- */
-export function verifyOfflineStoreSubdomain(explicitSlug?: string | null): string {
-  const activeSubdomain = resolveActiveStoreSubdomain(explicitSlug);
-
-  if (typeof localStorage !== 'undefined') {
-    const scopedUserRaw =
-      localStorage.getItem(`pos_current_user:${activeSubdomain}`) ||
-      localStorage.getItem('pos_current_user') ||
-      localStorage.getItem('shoe_pos_user');
-    if (scopedUserRaw) {
-      try {
-        const parsed = JSON.parse(scopedUserRaw);
-        const userSubdomain = String(parsed?.storeSubdomain || parsed?.slug || '')
-          .trim()
-          .toLowerCase();
-        if (
-          parsed &&
-          parsed.role !== 'SUPER_ADMIN' &&
-          userSubdomain &&
-          !RESERVED_SLUGS.has(userSubdomain) &&
-          activeSubdomain !== 'default' &&
-          userSubdomain !== activeSubdomain
-        ) {
-          throw new Error(
-            `Cross-store offline cache access blocked: authenticated for "${userSubdomain}", cannot access "${activeSubdomain}".`
-          );
-        }
-      } catch (err: any) {
-        if (err?.message?.includes('Cross-store offline cache access blocked')) {
-          throw err;
-        }
-      }
-    }
-  }
-
-  return activeSubdomain;
-}
-
-/**
  * Normalizes any product object from online catalog or API into a consistent
  * tenant-scoped POS product structure for offline billing using Product.tenantId.
  */
@@ -348,7 +282,6 @@ export function normalizeCachedProduct(p: any, tenantId: number): any {
     active: p.active !== false,
     cachedAt: new Date().toISOString(),
   };
-  delete normalized.storeSubdomain;
   return normalized;
 }
 
@@ -424,13 +357,12 @@ function openDB(): Promise<IDBDatabase> {
         const salesStore = db.createObjectStore(STORE_SALES, { keyPath: 'clientTxId' });
         salesStore.createIndex('status', 'status', { unique: false });
         salesStore.createIndex('createdAt', 'createdAt', { unique: false });
-        salesStore.createIndex('storeSubdomain', 'storeSubdomain', { unique: false });
       }
       // Remove legacy unscoped product store if present
       if (db.objectStoreNames.contains(STORE_CATALOG_LEGACY)) {
         db.deleteObjectStore(STORE_CATALOG_LEGACY);
       }
-      // On upgrade to v3 (tenantId-scoped product cache), recreate STORE_CATALOG to purge legacy subdomain-isolated entries
+      // On upgrade to v3 (tenantId-scoped product cache), recreate STORE_CATALOG
       if (event.oldVersion < 3 && db.objectStoreNames.contains(STORE_CATALOG)) {
         db.deleteObjectStore(STORE_CATALOG);
       }
@@ -450,12 +382,10 @@ function openDB(): Promise<IDBDatabase> {
 /**
  * Save an offline sale to IndexedDB
  */
-export async function queueOfflineSale(sale: QueuedSale, explicitStoreSubdomain?: string | null): Promise<void> {
-  const storeSubdomain = verifyOfflineStoreSubdomain(sale.storeSubdomain || explicitStoreSubdomain);
-  const resolvedTenantId = resolveActiveTenantId(sale.tenantId);
+export async function queueOfflineSale(sale: QueuedSale, explicitTenantId?: number | null): Promise<void> {
+  const resolvedTenantId = resolveActiveTenantId(sale.tenantId ?? explicitTenantId);
   const scopedSale: QueuedSale = {
     ...sale,
-    storeSubdomain,
     ...(resolvedTenantId ? { tenantId: resolvedTenantId } : {}),
   };
   const db = await openDB();
@@ -475,16 +405,10 @@ export async function queueOfflineSale(sale: QueuedSale, explicitStoreSubdomain?
 }
 
 /**
- * Get all queued offline sales for the active store subdomain
+ * Get all queued offline sales for the active store tenantId
  */
-export async function getOfflineSales(explicitStoreSubdomain?: string | null): Promise<QueuedSale[]> {
-  let storeSubdomain = 'default';
-  try {
-    storeSubdomain = verifyOfflineStoreSubdomain(explicitStoreSubdomain);
-  } catch {
-    return [];
-  }
-  const activeTenantId = resolveActiveTenantId();
+export async function getOfflineSales(explicitTenantId?: number | null): Promise<QueuedSale[]> {
+  const activeTenantId = resolveActiveTenantId(explicitTenantId);
 
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -498,7 +422,7 @@ export async function getOfflineSales(explicitStoreSubdomain?: string | null): P
         if (activeTenantId && s.tenantId) {
           return Number(s.tenantId) === activeTenantId;
         }
-        return !s.storeSubdomain || s.storeSubdomain === storeSubdomain;
+        return !s.tenantId;
       });
       results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       resolve(results);
@@ -508,10 +432,10 @@ export async function getOfflineSales(explicitStoreSubdomain?: string | null): P
 }
 
 /**
- * Get count of pending offline sales for the active store subdomain
+ * Get count of pending offline sales for the active store tenantId
  */
-export async function getPendingOfflineSalesCount(explicitStoreSubdomain?: string | null): Promise<number> {
-  const all = await getOfflineSales(explicitStoreSubdomain);
+export async function getPendingOfflineSalesCount(explicitTenantId?: number | null): Promise<number> {
+  const all = await getOfflineSales(explicitTenantId);
   return all.filter((s) => s.status === 'PENDING' || s.status === 'FAILED').length;
 }
 

@@ -14,10 +14,9 @@ import { sendPasswordResetEmail } from '../mailer.ts';
 
 const router = Router();
 
-// Resolve selected store by tenantId; slugs are never URL selectors.
+// Resolve selected store by tenantId.
 async function resolveTargetTenant(req: Request): Promise<{
   id: number;
-  slug: string;
   name: string;
   status: string;
   subscription_plan?: string;
@@ -41,7 +40,7 @@ async function resolveTargetTenant(req: Request): Promise<{
 
   if (hasExplicitTenantId) {
     const byIdRes = await pgClient.query<any>(
-      `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
+      `SELECT t.id, t.name, t.status, t.subscription_plan,
               t.subscription_start_date, t.subscription_end_date, t.subscription_status,
               u.name AS owner_name, u.email AS owner_email, u.phone AS owner_phone
        FROM tenants t
@@ -60,7 +59,7 @@ async function resolveTargetTenant(req: Request): Promise<{
   }
 
   const defRes = await pgClient.query<any>(
-    `SELECT t.id, t.slug, t.name, t.status, t.subscription_plan,
+    `SELECT t.id, t.name, t.status, t.subscription_plan,
             t.subscription_start_date, t.subscription_end_date, t.subscription_status,
             u.name AS owner_name, u.email AS owner_email, u.phone AS owner_phone
      FROM tenants t
@@ -87,7 +86,6 @@ const handleGetStoreCredentials = async (req: Request, res: Response) => {
 
     const creds = await ensureTenantStoreUsers({
       tenantId: tenant.id,
-      slug: tenant.slug,
       storeName: tenant.name,
       ownerEmail: tenant.owner_email,
       ownerPhone: tenant.owner_phone,
@@ -97,7 +95,6 @@ const handleGetStoreCredentials = async (req: Request, res: Response) => {
     return res.json({
       tenant: {
         id: tenant.id,
-        slug: tenant.slug,
         name: tenant.name,
         status: tenant.status,
         subscriptionPlan: tenant.subscription_plan || 'YEARLY',
@@ -139,7 +136,7 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
     // Authenticate against the explicitly selected tenant when tenantId is supplied.
     if (hasExplicitTenantId) {
       const tenantRes = await pgClient.query<any>(
-              'SELECT id, slug, name, status, onboarding_completed, subscription_plan, subscription_start_date, subscription_end_date, subscription_status FROM tenants WHERE id = $1 LIMIT 1',
+              'SELECT id, name, status, onboarding_completed, subscription_plan, subscription_start_date, subscription_end_date, subscription_status FROM tenants WHERE id = $1 LIMIT 1',
               [explicitTenantId]
             );
       if (tenantRes.rows.length === 0) {
@@ -220,7 +217,7 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
 
       if (!matchedUser) {
         return res.status(401).json({
-          error: `Invalid email or password for store "${tenant.name}" (${tenant.slug}).`,
+          error: `Invalid email or password for store "${tenant.name}".`,
         });
       }
     } else {
@@ -256,7 +253,7 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
         matchedUser = matchedSuperAdmin;
       } else if (matchingTenantIds.length > 1) {
         const storesRes = await pgClient.query<any>(
-          `SELECT id, slug, name
+          `SELECT id, name
            FROM tenants
            WHERE id = ANY($1::int[])
            ORDER BY name ASC, id ASC`,
@@ -267,7 +264,6 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
           error: 'These credentials match accounts in more than one store. Select a store to continue.',
           stores: storesRes.rows.map((store) => ({
             tenantId: Number(store.id),
-            slug: store.slug,
             name: store.name,
           })),
         });
@@ -307,7 +303,6 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
       });
     }
 
-    let tenantSlug = isSuperAdminRole ? 'admin' : resolvedTenantRow?.slug || '';
     let tenantName = isSuperAdminRole ? 'POS SaaS C-Panel' : resolvedTenantRow?.name || 'Retail Store';
     let onboardingCompleted = resolvedTenantRow ? Boolean(resolvedTenantRow.onboarding_completed) : true;
     let subscriptionStatus = resolvedTenantRow
@@ -319,13 +314,12 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
         resolvedTenantRow ||
         (
           await pgClient.query<any>(
-            'SELECT id, slug, name, status, onboarding_completed, subscription_end_date, subscription_status FROM tenants WHERE id = $1 LIMIT 1',
+            'SELECT id, name, status, onboarding_completed, subscription_end_date, subscription_status FROM tenants WHERE id = $1 LIMIT 1',
             [tenantId]
           )
         ).rows[0];
 
       if (t) {
-        tenantSlug = t.slug;
         tenantName = t.name;
         onboardingCompleted = Boolean(t.onboarding_completed);
         subscriptionStatus = String(t.subscription_status || 'ACTIVE').toUpperCase();
@@ -374,8 +368,6 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
     const authUser = {
       id: user.id,
       tenantId,
-      slug: tenantSlug,
-      storeSubdomain: tenantSlug,
       tenantName,
       name: user.name,
       email: user.email,
@@ -419,9 +411,11 @@ const handleStoreRegister = async (req: Request, res: Response) => {
     const targetTenant = await resolveTargetTenant(req);
     const tenantId = targetTenant?.id || 1;
 
+    const cleanEmail = email.trim().toLowerCase();
+
     const existing = await pgClient.query(
       'SELECT id FROM users WHERE LOWER(BTRIM(email)) = LOWER(BTRIM($1)) LIMIT 1',
-      [email.trim()]
+      [cleanEmail]
     );
     if (existing.rows.length > 0) {
       return res.status(409).json({
@@ -437,7 +431,7 @@ const handleStoreRegister = async (req: Request, res: Response) => {
       `INSERT INTO users (tenant_id, name, email, phone, password_hash, quick_password, role, status) 
        VALUES ($1, $2, $3, $4, $5, $6, 'CASHIER', 'PENDING') 
        RETURNING id, tenant_id, name, email, phone, role, status`,
-      [tenantId, name.trim(), email.trim(), userPhone, passwordHash, password]
+      [tenantId, name.trim(), cleanEmail, userPhone, passwordHash, password]
     );
 
     res.status(201).json({
@@ -487,7 +481,6 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       user: {
         id: row.id,
         tenantId: effectiveTid,
-        slug: req.user!.slug || '',
         name: row.name,
         email: row.email,
         phone: row.phone || '',
@@ -535,7 +528,6 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     const updatedUser: AuthUser = {
       id: row.id,
       tenantId: req.user!.tenantId || (Number.isInteger(rowTid) && rowTid > 0 ? rowTid : 1),
-      slug: req.user!.slug || '',
       name: row.name,
       email: row.email,
       phone: row.phone || '',
@@ -721,10 +713,7 @@ const handleSendPasswordResetLink = async (req: Request, res: Response) => {
       success: true,
       emailSent: mailResult.delivered,
       emailProvider: mailResult.provider,
-      emailPreviewUrl: mailResult.previewUrl || null,
       email: user.email,
-      resetLink,
-      resetToken,
       expiresAt: expiresAt.toISOString(),
       message: `Password reset token and link have been sent by email to ${user.email}.`,
     });

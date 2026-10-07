@@ -103,9 +103,6 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
     }
   };
 
-  const step1Done = Boolean(name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim()));
-  const step2Done = Boolean(password.length >= 8 && password === confirmPassword);
-
   return (
     <PublicLayout
       storeName="Shoe Shop POS Setup"
@@ -120,9 +117,9 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
         className="relative w-full max-w-2xl bg-white dark:bg-[#131B2E] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh] border border-slate-200 dark:border-purple-800/80"
       >
-        {/* MODAL HEADER & STEPPER ALIGNED WITH PRODUCT FORM MODAL */}
+        {/* MODAL HEADER ALIGNED WITH PRODUCT FORM MODAL */}
         <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 border-b border-slate-200 dark:border-purple-800/80 text-slate-800 dark:text-white px-6 py-4 shrink-0">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:bg-purple-500/20 dark:text-purple-300 border border-blue-500/20 dark:border-purple-400/30 flex items-center justify-center font-bold shadow-2xs shrink-0">
                 <Database className="w-4 h-4" />
@@ -164,55 +161,6 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
                   <X className="w-5 h-5" />
                 </button>
               )}
-            </div>
-          </div>
-
-          {/* 2-Step Stepper Navigation (Aligned with ProductFormModal) */}
-          <div className="grid grid-cols-2 gap-2">
-            <div
-              className={`flex items-center gap-1.5 p-2 rounded-xl text-left transition border ${
-                step1Done
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'
-                  : 'btn-primary text-white shadow-xs font-semibold border-transparent'
-              }`}
-            >
-              <div
-                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                  step1Done ? 'bg-emerald-600 text-white' : 'bg-white text-blue-600'
-                }`}
-              >
-                {step1Done ? <Check className="w-3 h-3 stroke-[3]" /> : '1'}
-              </div>
-              <div className="truncate">
-                <span className="block text-[9px] uppercase font-bold tracking-wider opacity-75">Step 1</span>
-                <span className="block text-xs font-semibold truncate">Superadmin Identity</span>
-              </div>
-            </div>
-
-            <div
-              className={`flex items-center gap-1.5 p-2 rounded-xl text-left transition border ${
-                step2Done
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'
-                  : step1Done
-                  ? 'btn-primary text-white shadow-xs font-semibold border-transparent'
-                  : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-purple-950/40 dark:text-purple-200 dark:border-purple-800/50'
-              }`}
-            >
-              <div
-                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                  step2Done
-                    ? 'bg-emerald-600 text-white'
-                    : step1Done
-                    ? 'bg-white text-blue-600'
-                    : 'bg-slate-200 text-slate-600 dark:bg-purple-900/60 dark:text-purple-200'
-                }`}
-              >
-                {step2Done ? <Check className="w-3 h-3 stroke-[3]" /> : '2'}
-              </div>
-              <div className="truncate">
-                <span className="block text-[9px] uppercase font-bold tracking-wider opacity-75">Step 2</span>
-                <span className="block text-xs font-semibold truncate">Security &amp; Schema</span>
-              </div>
             </div>
           </div>
         </div>

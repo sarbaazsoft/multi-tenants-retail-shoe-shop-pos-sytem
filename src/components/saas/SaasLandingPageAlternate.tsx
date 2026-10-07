@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  ArrowRight, BarChart3, Building2, Check, CheckCircle2, Mail, Package,
+  AlertCircle, ArrowRight, BarChart3, Building2, Check, CheckCircle2, Loader2, Mail, Package,
   Phone, Printer, ShieldCheck, ShoppingCart, Sparkles, Store, Truck, Users, X,
 } from 'lucide-react';
 import { api } from '../../services/api';
@@ -42,10 +42,124 @@ export const SaasLandingPageAlternate: React.FC<Props> = ({ availableTenants, on
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const openPlan = (value: string) => { setPlan(value); setError(''); setSuccess(''); setRequestOpen(true); };
+
+  // Real-time validation & email availability states
+  const [storeNameTouched, setStoreNameTouched] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [emailCheckStatus, setEmailCheckStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
+  const [emailCheckMessage, setEmailCheckMessage] = useState('');
+
+  const trimmedStoreName = storeName.trim();
+  const isStoreNameLengthValid = trimmedStoreName.length >= 2 && trimmedStoreName.length <= 80;
+  const isStoreNameFormatValid = /^[a-zA-Z0-9\s&'.,\-()]+$/.test(trimmedStoreName);
+  const isStoreNameDuplicate = availableTenants.some(
+    (t) => t.name.trim().toLowerCase() === trimmedStoreName.toLowerCase()
+  );
+  const storeNameError = !trimmedStoreName
+    ? 'Store name is required.'
+    : !isStoreNameLengthValid
+    ? 'Store name must be between 2 and 80 characters.'
+    : !isStoreNameFormatValid
+    ? 'Store name contains invalid special characters.'
+    : isStoreNameDuplicate
+    ? 'A store with this name already exists.'
+    : '';
+  const isStoreNameValid = !storeNameError;
+
+  const trimmedOwnerEmail = toLowerTrimmed(ownerEmail);
+  const isEmailFormatValid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmedOwnerEmail);
+  const emailError = !trimmedOwnerEmail
+    ? 'Owner email is required.'
+    : !isEmailFormatValid
+    ? 'Please enter a valid email address (e.g. owner@store.com).'
+    : emailCheckStatus === 'taken' || emailCheckStatus === 'invalid'
+    ? emailCheckMessage || 'This email is already registered.'
+    : '';
+  const isEmailValid =
+    Boolean(trimmedOwnerEmail) &&
+    isEmailFormatValid &&
+    emailCheckStatus === 'available';
+
+  const trimmedOwnerPhone = ownerPhone.trim();
+  const phoneDigits = trimmedOwnerPhone.replace(/\D/g, '');
+  const isPhoneCharsValid = /^[+]?[0-9\s\-()]+$/.test(trimmedOwnerPhone);
+  const isPhoneDigitsValid = phoneDigits.length >= 10 && phoneDigits.length <= 15;
+  const phoneError = !trimmedOwnerPhone
+    ? 'Phone / WhatsApp number is required.'
+    : !isPhoneCharsValid
+    ? 'Phone number can only contain digits, spaces, +, -, and ().'
+    : !isPhoneDigitsValid
+    ? 'Enter a valid 10 to 15 digit phone number (e.g. +92 300 1234567).'
+    : '';
+  const isPhoneValid = !phoneError;
+
+  const isStoreRequestFormValid =
+    isStoreNameValid &&
+    isEmailValid &&
+    isPhoneValid &&
+    emailCheckStatus !== 'checking';
+
+  useEffect(() => {
+    if (!requestOpen) return;
+    if (!trimmedOwnerEmail) {
+      setEmailCheckStatus('idle');
+      setEmailCheckMessage('');
+      return;
+    }
+    if (!isEmailFormatValid) {
+      setEmailCheckStatus('invalid');
+      setEmailCheckMessage('Please enter a valid email address format.');
+      return;
+    }
+
+    let cancelled = false;
+    setEmailCheckStatus('checking');
+    setEmailCheckMessage('Checking email availability...');
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await api.saas.checkEmailAvailability(trimmedOwnerEmail);
+        if (cancelled) return;
+        if (res.available) {
+          setEmailCheckStatus('available');
+          setEmailCheckMessage(res.message || 'Email is available.');
+        } else {
+          setEmailCheckStatus('taken');
+          setEmailCheckMessage(res.message || 'This email is already registered.');
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setEmailCheckStatus('taken');
+        setEmailCheckMessage(err?.message || 'Unable to verify email availability.');
+      }
+    }, 320);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [trimmedOwnerEmail, isEmailFormatValid, requestOpen]);
+
+  const openPlan = (value: string) => {
+    setPlan(value);
+    setError('');
+    setSuccess('');
+    setStoreNameTouched(false);
+    setEmailTouched(false);
+    setPhoneTouched(false);
+    setRequestOpen(true);
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setStoreNameTouched(true);
+    setEmailTouched(true);
+    setPhoneTouched(true);
+    if (!isStoreRequestFormValid) {
+      setError(storeNameError || emailError || phoneError || 'Please complete all fields with valid details.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -55,7 +169,13 @@ export const SaasLandingPageAlternate: React.FC<Props> = ({ availableTenants, on
       });
       setSuccess(result.message);
       setStoreName(''); setOwnerEmail(''); setOwnerPhone('');
+      setStoreNameTouched(false); setEmailTouched(false); setPhoneTouched(false);
+      setEmailCheckStatus('idle'); setEmailCheckMessage('');
     } catch (err: any) {
+      if (err?.code === 'EMAIL_ALREADY_EXISTS' || err?.code === 'REQUEST_ALREADY_PENDING') {
+        setEmailCheckStatus('taken');
+        setEmailCheckMessage(err.message || 'This email is already registered.');
+      }
       setError(err.message || 'Failed to submit store request.');
     } finally {
       setBusy(false);
@@ -233,47 +353,161 @@ export const SaasLandingPageAlternate: React.FC<Props> = ({ availableTenants, on
                       <span className="text-[11px] text-gray-400 dark:text-slate-500 font-medium">Shop Details</span>
                     </div>
 
-                    <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
-                      Store Name <span className="text-red-500">*</span>
-                      <span className="relative mt-1.5 block">
-                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
-                        <input
-                          required
-                          value={storeName}
-                          onChange={(event) => setStoreName(toTitleCaseLive(event.target.value))}
-                          placeholder="e.g. Metro Footwear"
-                          className="capitalize w-full rounded-xl border border-gray-300 dark:border-purple-400/40 bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-3 text-xs font-medium text-gray-900 dark:text-purple-100 focus:border-indigo-600 focus:outline-none"
-                        />
-                      </span>
-                    </label>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
                       <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
-                        Owner Email <span className="text-red-500">*</span>
+                        Store Name <span className="text-red-500">*</span>
                         <span className="relative mt-1.5 block">
-                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
+                          <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
                           <input
                             required
-                            type="email"
-                            value={ownerEmail}
-                            onChange={(event) => setOwnerEmail(event.target.value)}
-                            placeholder="owner@metroshoes.pk"
-                            className="w-full rounded-xl border border-gray-300 dark:border-purple-400/40 bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-3 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 focus:border-indigo-600 focus:outline-none"
+                            value={storeName}
+                            onChange={(event) => {
+                              setStoreName(toTitleCaseLive(event.target.value));
+                              if (!storeNameTouched) setStoreNameTouched(true);
+                            }}
+                            onBlur={() => setStoreNameTouched(true)}
+                            placeholder="e.g. Metro Footwear"
+                            className={`capitalize w-full rounded-xl border bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-9 text-xs font-medium text-gray-900 dark:text-purple-100 focus:outline-none ${
+                              storeNameTouched && storeNameError
+                                ? 'border-rose-500 focus:border-rose-500'
+                                : storeNameTouched && isStoreNameValid
+                                ? 'border-emerald-500 focus:border-emerald-500'
+                                : 'border-gray-300 dark:border-purple-400/40 focus:border-indigo-600'
+                            }`}
                           />
+                          {storeNameTouched && (
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                              {isStoreNameValid ? (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                              ) : (
+                                <AlertCircle className="h-4 w-4 text-rose-500" />
+                              )}
+                            </span>
+                          )}
                         </span>
                       </label>
-                      <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
-                        Phone / WhatsApp
-                        <span className="relative mt-1.5 block">
-                          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
-                          <input
-                            value={ownerPhone}
-                            onChange={(event) => setOwnerPhone(event.target.value)}
-                            placeholder="+92 300 1234567"
-                            className="w-full rounded-xl border border-gray-300 dark:border-purple-400/40 bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-3 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 focus:border-indigo-600 focus:outline-none"
-                          />
-                        </span>
-                      </label>
+                      {storeNameTouched && storeNameError ? (
+                        <p className="mt-1.5 text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          <span>{storeNameError}</span>
+                        </p>
+                      ) : storeNameTouched && isStoreNameValid ? (
+                        <p className="mt-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                          <span>Store name looks good</span>
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
+                          Owner Email <span className="text-red-500">*</span>
+                          <span className="relative mt-1.5 block">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
+                            <input
+                              required
+                              type="email"
+                              value={ownerEmail}
+                              onChange={(event) => {
+                                setOwnerEmail(toLowerTrimmed(event.target.value));
+                                if (!emailTouched) setEmailTouched(true);
+                              }}
+                              onBlur={() => setEmailTouched(true)}
+                              placeholder="owner@metroshoes.pk"
+                              className={`w-full rounded-xl border bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-9 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 focus:outline-none ${
+                                emailTouched && (emailError || emailCheckStatus === 'taken' || emailCheckStatus === 'invalid')
+                                  ? 'border-rose-500 focus:border-rose-500'
+                                  : emailCheckStatus === 'available'
+                                  ? 'border-emerald-500 focus:border-emerald-500'
+                                  : 'border-gray-300 dark:border-purple-400/40 focus:border-indigo-600'
+                              }`}
+                            />
+                            {trimmedOwnerEmail && (
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                                {emailCheckStatus === 'checking' ? (
+                                  <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
+                                ) : emailCheckStatus === 'available' ? (
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                ) : (
+                                  <AlertCircle className="h-4 w-4 text-rose-500" />
+                                )}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                        {trimmedOwnerEmail ? (
+                          emailCheckStatus === 'checking' ? (
+                            <p className="mt-1.5 text-[11px] font-medium text-indigo-600 dark:text-indigo-300 flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                              <span>Checking email availability...</span>
+                            </p>
+                          ) : emailCheckStatus === 'available' ? (
+                            <p className="mt-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                              <span>{emailCheckMessage || 'Email is available'}</span>
+                            </p>
+                          ) : (
+                            <p className="mt-1.5 text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                              <span>{emailError || emailCheckMessage}</span>
+                            </p>
+                          )
+                        ) : emailTouched && emailError ? (
+                          <p className="mt-1.5 text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            <span>{emailError}</span>
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-gray-800 dark:text-slate-200">
+                          Phone / WhatsApp <span className="text-red-500">*</span>
+                          <span className="relative mt-1.5 block">
+                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-purple-600 dark:text-purple-400 pointer-events-none" />
+                            <input
+                              required
+                              type="tel"
+                              value={ownerPhone}
+                              onChange={(event) => {
+                                const cleaned = event.target.value.replace(/[^0-9+\s\-()]/g, '');
+                                setOwnerPhone(cleaned);
+                                if (!phoneTouched) setPhoneTouched(true);
+                              }}
+                              onBlur={() => setPhoneTouched(true)}
+                              placeholder="+92 300 1234567"
+                              className={`w-full rounded-xl border bg-white dark:bg-purple-500/20 py-2.5 pl-9 pr-9 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 focus:outline-none ${
+                                phoneTouched && phoneError
+                                  ? 'border-rose-500 focus:border-rose-500'
+                                  : phoneTouched && isPhoneValid
+                                  ? 'border-emerald-500 focus:border-emerald-500'
+                                  : 'border-gray-300 dark:border-purple-400/40 focus:border-indigo-600'
+                              }`}
+                            />
+                            {phoneTouched && (
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                                {isPhoneValid ? (
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                ) : (
+                                  <AlertCircle className="h-4 w-4 text-rose-500" />
+                                )}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                        {phoneTouched && phoneError ? (
+                          <p className="mt-1.5 text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            <span>{phoneError}</span>
+                          </p>
+                        ) : phoneTouched && isPhoneValid ? (
+                          <p className="mt-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                            <span>Valid phone number ({phoneDigits.length} digits)</span>
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
 
@@ -315,12 +549,16 @@ export const SaasLandingPageAlternate: React.FC<Props> = ({ availableTenants, on
                   <button
                     type="submit"
                     form="alt-landing-store-request-form"
-                    disabled={busy}
+                    disabled={busy || !isStoreRequestFormValid}
                     style={{ color: '#ffffff' }}
-                    className="btn-primary btn-pure-white px-6 py-2.5 text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50"
+                    className="btn-primary btn-pure-white px-6 py-2.5 text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
-                      {busy ? 'Submitting Request...' : 'Submit Store Request'}
+                      {busy
+                        ? 'Submitting Request...'
+                        : emailCheckStatus === 'checking'
+                        ? 'Checking Email...'
+                        : 'Submit Store Request'}
                     </span>
                     <ArrowRight className="h-4 w-4 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
                   </button>

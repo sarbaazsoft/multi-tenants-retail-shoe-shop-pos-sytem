@@ -19,6 +19,8 @@ import {
   Mail,
   Phone,
   CheckCircle2,
+  AlertCircle,
+  Loader2,
   DollarSign,
   Sparkles,
 } from 'lucide-react';
@@ -210,16 +212,142 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
     message: string;
   } | null>(null);
 
+  // Real-time validation & email availability states
+  const [storeNameTouched, setStoreNameTouched] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [emailAvailability, setEmailAvailability] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+  const [emailAvailabilityMsg, setEmailAvailabilityMsg] = useState<string>('');
+
+  const trimmedStoreName = storeName.trim();
+  const isDuplicateStoreName =
+    trimmedStoreName.length >= 2 &&
+    storeDirectory.some((t) => String(t.name || '').trim().toLowerCase() === trimmedStoreName.toLowerCase());
+  const isStoreNameValid =
+    trimmedStoreName.length >= 3 &&
+    trimmedStoreName.length <= 80 &&
+    /[A-Za-z]{2,}/.test(trimmedStoreName) &&
+    /^[A-Za-z0-9][A-Za-z0-9\s&'.,()-]{2,79}$/.test(trimmedStoreName) &&
+    !isDuplicateStoreName;
+
+  const storeNameErrorMsg = !trimmedStoreName
+    ? 'Store name is required.'
+    : isDuplicateStoreName
+    ? 'A store with this name already exists. Please choose a different store name.'
+    : trimmedStoreName.length < 3
+    ? 'Store name must be at least 3 characters.'
+    : !/[A-Za-z]{2,}/.test(trimmedStoreName)
+    ? 'Store name must include letters (e.g. Metro Footwear).'
+    : !isStoreNameValid
+    ? 'Store name contains invalid characters.'
+    : '';
+
+  const trimmedEmail = ownerEmail.trim().toLowerCase();
+  const isEmailFormatValid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmedEmail);
+
+  const trimmedPhone = ownerPhone.trim();
+  const phoneDigitsCount = trimmedPhone.replace(/\D/g, '').length;
+  const isPhoneValid =
+    trimmedPhone.length > 0 &&
+    /^[+]?[0-9\s\-()]{7,20}$/.test(trimmedPhone) &&
+    phoneDigitsCount >= 10 &&
+    phoneDigitsCount <= 15;
+
+  const phoneErrorMsg = !trimmedPhone
+    ? 'Phone / WhatsApp number is required.'
+    : !/^[+]?[0-9\s\-()]+$/.test(trimmedPhone)
+    ? 'Phone number can only contain digits, +, spaces, or hyphens.'
+    : phoneDigitsCount < 10
+    ? `Enter at least 10 digits (${phoneDigitsCount}/10 entered).`
+    : phoneDigitsCount > 15
+    ? 'Phone number cannot exceed 15 digits.'
+    : '';
+
+  // Real-time debounced email availability check
+  useEffect(() => {
+    if (!showRequestModal) return;
+    if (!trimmedEmail || !isEmailFormatValid) {
+      setEmailAvailability('idle');
+      setEmailAvailabilityMsg('');
+      return;
+    }
+
+    let cancelled = false;
+    setEmailAvailability('checking');
+    setEmailAvailabilityMsg('Checking email availability...');
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await api.saas.checkEmailAvailability(trimmedEmail);
+        if (cancelled) return;
+        if (res.available) {
+          setEmailAvailability('available');
+          setEmailAvailabilityMsg(res.message || 'Email is available.');
+        } else {
+          setEmailAvailability('taken');
+          setEmailAvailabilityMsg(
+            res.message || 'This email is already in use. Please use a different email address.'
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setEmailAvailability('available');
+          setEmailAvailabilityMsg('Email format is valid.');
+        }
+      }
+    }, 280);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [trimmedEmail, isEmailFormatValid, showRequestModal]);
+
+  const canSubmitStoreRequest =
+    isStoreNameValid &&
+    isEmailFormatValid &&
+    emailAvailability === 'available' &&
+    isPhoneValid &&
+    !submitting;
+
   const openGetStartedWithPlan = (selectedPlan: string) => {
     setPlan(selectedPlan);
     setSubmitError(null);
+    setStoreNameTouched(false);
+    setEmailTouched(false);
+    setPhoneTouched(false);
     setShowRequestModal(true);
   };
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
+    setStoreNameTouched(true);
+    setEmailTouched(true);
+    setPhoneTouched(true);
     setSubmitError(null);
     setSubmitSuccess(null);
+
+    if (!isStoreNameValid) {
+      setSubmitError(storeNameErrorMsg || 'Please enter a valid store name.');
+      return;
+    }
+    if (!isEmailFormatValid) {
+      setSubmitError('Please enter a valid owner email address.');
+      return;
+    }
+    if (emailAvailability === 'checking') {
+      setSubmitError('Please wait while we verify email availability.');
+      return;
+    }
+    if (emailAvailability === 'taken') {
+      setSubmitError(emailAvailabilityMsg || 'This email is already in use. Please use a different email address.');
+      return;
+    }
+    if (!isPhoneValid) {
+      setSubmitError(phoneErrorMsg || 'Please enter a valid Phone / WhatsApp number (10 to 15 digits).');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await api.saas.submitStoreRequest({
@@ -234,7 +362,16 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
       setStoreName('');
       setOwnerEmail('');
       setOwnerPhone('');
+      setStoreNameTouched(false);
+      setEmailTouched(false);
+      setPhoneTouched(false);
+      setEmailAvailability('idle');
+      setEmailAvailabilityMsg('');
     } catch (err: any) {
+      if (err?.code === 'EMAIL_ALREADY_EXISTS' || err?.code === 'PENDING_REQUEST_EXISTS') {
+        setEmailAvailability('taken');
+        setEmailAvailabilityMsg(err.message || 'This email is already in use.');
+      }
       setSubmitError(err.message || 'Failed to submit store request.');
     } finally {
       setSubmitting(false);
@@ -1048,11 +1185,42 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
                           type="text"
                           required
                           value={storeName}
-                          onChange={(e) => setStoreName(toTitleCaseLive(e.target.value))}
+                          onBlur={() => setStoreNameTouched(true)}
+                          onChange={(e) => {
+                            setStoreName(toTitleCaseLive(e.target.value));
+                            if (submitError) setSubmitError(null);
+                          }}
                           placeholder="e.g. Metro Footwear"
-                          className="capitalize w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 text-xs font-medium text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                          aria-invalid={(storeNameTouched || storeName.length > 0) && !isStoreNameValid}
+                          className={`capitalize w-full pl-9 pr-9 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border text-xs font-medium text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none transition shadow-2xs ${
+                            (storeNameTouched || storeName.length > 0) && !isStoreNameValid
+                              ? 'border-rose-400 dark:border-rose-500/70 focus:border-rose-500'
+                              : isStoreNameValid
+                              ? 'border-emerald-400 dark:border-emerald-500/70 focus:border-emerald-500'
+                              : 'border-gray-300 dark:border-purple-400/40 focus:border-indigo-600 dark:focus:border-purple-400'
+                          }`}
                         />
+                        {(storeNameTouched || storeName.length > 0) && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                            {isStoreNameValid ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-rose-500" />
+                            )}
+                          </div>
+                        )}
                       </div>
+                      {(storeNameTouched || storeName.length > 0) && (
+                        <p
+                          className={`mt-1.5 text-[11px] font-medium flex items-center gap-1 ${
+                            isStoreNameValid
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          {isStoreNameValid ? 'Store name looks great.' : storeNameErrorMsg}
+                        </p>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1066,27 +1234,103 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
                             type="email"
                             required
                             value={ownerEmail}
-                            onChange={(e) => setOwnerEmail(e.target.value)}
+                            onBlur={() => setEmailTouched(true)}
+                            onChange={(e) => {
+                              setOwnerEmail(e.target.value);
+                              if (submitError) setSubmitError(null);
+                            }}
                             placeholder="owner@metroshoes.pk"
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                            aria-invalid={
+                              (emailTouched || ownerEmail.length > 0) &&
+                              (!isEmailFormatValid || emailAvailability === 'taken')
+                            }
+                            className={`w-full pl-9 pr-9 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none transition shadow-2xs ${
+                              (emailTouched || ownerEmail.length > 0) &&
+                              (!isEmailFormatValid || emailAvailability === 'taken')
+                                ? 'border-rose-400 dark:border-rose-500/70 focus:border-rose-500'
+                                : isEmailFormatValid && emailAvailability === 'available'
+                                ? 'border-emerald-400 dark:border-emerald-500/70 focus:border-emerald-500'
+                                : 'border-gray-300 dark:border-purple-400/40 focus:border-indigo-600 dark:focus:border-purple-400'
+                            }`}
                           />
+                          {(emailTouched || ownerEmail.length > 0) && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                              {emailAvailability === 'checking' ? (
+                                <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                              ) : isEmailFormatValid && emailAvailability === 'available' ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                              ) : (
+                                <AlertCircle className="w-4 h-4 text-rose-500" />
+                              )}
+                            </div>
+                          )}
                         </div>
+                        {(emailTouched || ownerEmail.length > 0) && (
+                          <p
+                            className={`mt-1.5 text-[11px] font-medium flex items-center gap-1 ${
+                              !isEmailFormatValid || emailAvailability === 'taken'
+                                ? 'text-rose-600 dark:text-rose-400'
+                                : emailAvailability === 'checking'
+                                ? 'text-indigo-600 dark:text-indigo-300'
+                                : 'text-emerald-600 dark:text-emerald-400'
+                            }`}
+                          >
+                            {!trimmedEmail
+                              ? 'Owner email is required.'
+                              : !isEmailFormatValid
+                              ? 'Enter a valid email address (e.g. owner@metroshoes.pk).'
+                              : emailAvailabilityMsg}
+                          </p>
+                        )}
                       </div>
 
                       <div>
                         <label className="block text-xs font-bold text-gray-800 dark:text-slate-200 mb-1.5">
-                          Phone / WhatsApp
+                          Phone / WhatsApp <span className="text-red-500 dark:text-pink-400">*</span>
                         </label>
                         <div className="relative">
                           <Phone className="w-4 h-4 text-purple-600 dark:text-purple-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                           <input
-                            type="text"
+                            type="tel"
+                            required
                             value={ownerPhone}
-                            onChange={(e) => setOwnerPhone(e.target.value)}
+                            onBlur={() => setPhoneTouched(true)}
+                            onChange={(e) => {
+                              const cleaned = e.target.value.replace(/[^0-9+\s\-()]/g, '');
+                              setOwnerPhone(cleaned);
+                              if (submitError) setSubmitError(null);
+                            }}
                             placeholder="+92 300 1234567"
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition shadow-2xs"
+                            aria-invalid={(phoneTouched || ownerPhone.length > 0) && !isPhoneValid}
+                            className={`w-full pl-9 pr-9 py-2.5 rounded-xl bg-white dark:bg-purple-500/20 border text-xs font-medium font-mono text-gray-900 dark:text-purple-100 placeholder-slate-400 focus:outline-none transition shadow-2xs ${
+                              (phoneTouched || ownerPhone.length > 0) && !isPhoneValid
+                                ? 'border-rose-400 dark:border-rose-500/70 focus:border-rose-500'
+                                : isPhoneValid
+                                ? 'border-emerald-400 dark:border-emerald-500/70 focus:border-emerald-500'
+                                : 'border-gray-300 dark:border-purple-400/40 focus:border-indigo-600 dark:focus:border-purple-400'
+                            }`}
                           />
+                          {(phoneTouched || ownerPhone.length > 0) && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                              {isPhoneValid ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                              ) : (
+                                <AlertCircle className="w-4 h-4 text-rose-500" />
+                              )}
+                            </div>
+                          )}
                         </div>
+                        {(phoneTouched || ownerPhone.length > 0) && (
+                          <p
+                            className={`mt-1.5 text-[11px] font-medium flex items-center gap-1 ${
+                              isPhoneValid
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                            }`}
+                          >
+                            {isPhoneValid ? 'Valid contact number.' : phoneErrorMsg}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1136,12 +1380,16 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
                   <button
                     type="submit"
                     form="landing-store-request-form"
-                    disabled={submitting}
+                    disabled={!canSubmitStoreRequest}
                     style={{ color: '#ffffff' }}
-                    className="btn-primary btn-pure-white px-6 py-2.5 text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50"
+                    className="btn-primary btn-pure-white px-6 py-2.5 text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
-                      {submitting ? 'Submitting Request...' : 'Submit Store Request'}
+                      {submitting
+                        ? 'Submitting Request...'
+                        : emailAvailability === 'checking'
+                        ? 'Checking Email...'
+                        : 'Submit Store Request'}
                     </span>
                     <ArrowRight className="w-4 h-4 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
                   </button>

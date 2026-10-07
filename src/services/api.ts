@@ -10,10 +10,7 @@ const TOKEN_KEY = 'pos_auth_token';
 const ALT_TOKEN_KEY = 'shoe_pos_jwt_token';
 const USER_KEY = 'pos_current_user';
 const ALT_USER_KEY = 'shoe_pos_user';
-const ACTIVE_TENANT_SLUG_KEY = 'shoe_pos_active_tenant_slug';
 const ACTIVE_TENANT_ID_KEY = 'shoe_pos_active_tenant_id';
-
-const RESERVED_SLUGS = new Set(['admin', 'superadmin', 'landing', 'root', 'www', 'default']);
 
 function decodeTokenPayload(token: string): any | null {
   try {
@@ -30,14 +27,6 @@ function decodeTokenPayload(token: string): any | null {
   } catch {
     return null;
   }
-}
-
-export function getActiveTenantSlug(): string | null {
-  const stored = localStorage.getItem(ACTIVE_TENANT_SLUG_KEY);
-  if (stored && RESERVED_SLUGS.has(stored.toLowerCase())) {
-    return null;
-  }
-  return stored ? stored.toLowerCase() : null;
 }
 
 export function getActiveTenantId(): number | null {
@@ -74,15 +63,7 @@ export function setActiveTenantId(tenantId: number | null) {
   localStorage.removeItem(ACTIVE_TENANT_ID_KEY);
 }
 
-export function setActiveTenantSlug(slug: string | null) {
-  if (!slug || RESERVED_SLUGS.has(slug.toLowerCase())) {
-    localStorage.removeItem(ACTIVE_TENANT_SLUG_KEY);
-  } else {
-    localStorage.setItem(ACTIVE_TENANT_SLUG_KEY, slug.toLowerCase());
-  }
-}
-
-export function getAuthToken(explicitStoreSlug?: string | null): string | null {
+export function getAuthToken(): string | null {
   return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(ALT_TOKEN_KEY);
 }
 
@@ -90,27 +71,12 @@ export function getToken(): string | null {
   return getAuthToken();
 }
 
-export function setAuthToken(token: string, explicitStoreSlug?: string | null) {
+export function setAuthToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(ALT_TOKEN_KEY, token);
-
-  const decoded = decodeTokenPayload(token);
-  const slug =
-    explicitStoreSlug ||
-    decoded?.storeSubdomain ||
-    decoded?.slug ||
-    getActiveTenantSlug();
-  if (slug && !RESERVED_SLUGS.has(String(slug).toLowerCase())) {
-    localStorage.setItem(`${TOKEN_KEY}:${String(slug).toLowerCase()}`, token);
-  }
 }
 
-export function removeAuthToken(explicitStoreSlug?: string | null) {
-  const activeSlug = explicitStoreSlug || getActiveTenantSlug();
-  if (activeSlug && !RESERVED_SLUGS.has(activeSlug.toLowerCase())) {
-    localStorage.removeItem(`${TOKEN_KEY}:${activeSlug.toLowerCase()}`);
-    localStorage.removeItem(`${USER_KEY}:${activeSlug.toLowerCase()}`);
-  }
+export function removeAuthToken() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ALT_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
@@ -118,28 +84,19 @@ export function removeAuthToken(explicitStoreSlug?: string | null) {
 }
 
 export function setAuthSession(token: string, user: any) {
-  const userSlug = String(user?.storeSubdomain || user?.slug || getActiveTenantSlug() || '')
-    .trim()
-    .toLowerCase();
-  const cleanSlug = userSlug && !RESERVED_SLUGS.has(userSlug) ? userSlug : null;
-
-  setAuthToken(token, cleanSlug);
+  setAuthToken(token);
   if (String(user?.role || '').toUpperCase() !== 'SUPERADMIN') {
     setActiveTenantId(Number(user?.tenantId || 0) || null);
   }
   localStorage.setItem(USER_KEY, JSON.stringify(user));
   localStorage.setItem(ALT_USER_KEY, JSON.stringify(user));
-  if (cleanSlug) {
-    localStorage.setItem(`${USER_KEY}:${cleanSlug}`, JSON.stringify(user));
-    localStorage.setItem(ACTIVE_TENANT_SLUG_KEY, cleanSlug);
-  }
 }
 
 export function clearAuthSession() {
   removeAuthToken();
 }
 
-export function getStoredUser(explicitStoreSlug?: string | null) {
+export function getStoredUser() {
   const raw = localStorage.getItem(USER_KEY) || localStorage.getItem(ALT_USER_KEY);
   if (!raw) return null;
   try {
@@ -300,7 +257,7 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestOption
     }
     const apiError = new Error(data.error || `API Error (${response.status})`) as Error & {
       code?: string;
-      stores?: Array<{ tenantId: number; slug: string; name: string }>;
+      stores?: Array<{ tenantId: number; name: string }>;
       status?: number;
     };
     apiError.code = data.code;
@@ -328,7 +285,14 @@ export const api = {
       ownerPhone?: string;
       plan?: string;
     }) => apiFetch('/saas/store-requests', { method: 'POST', body: data }),
-  getManifest: (tenantId: number) => apiFetch(`/tenants/manifest?tenantId=${encodeURIComponent(String(tenantId))}`),
+    checkEmailAvailability: (email: string) =>
+      apiFetch<{
+        available: boolean;
+        validFormat: boolean;
+        reason?: string;
+        message?: string;
+      }>(`/saas/check-email?email=${encodeURIComponent(email.trim().toLowerCase())}`),
+    getManifest: (tenantId: number) => apiFetch(`/tenants/manifest?tenantId=${encodeURIComponent(String(tenantId))}`),
     getOnboarding: () => apiFetch('/tenants/onboarding'),
     completeOnboarding: (data: any) =>
       apiFetch('/tenants/onboarding', {
@@ -371,7 +335,6 @@ export const api = {
         success: boolean;
         filename: string;
         storeName: string;
-        slug: string;
         totalRows: number;
         sql: string;
       }>(`/superadmin/tenants/${tenantId}/export-sql`),

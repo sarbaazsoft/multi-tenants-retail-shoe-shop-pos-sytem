@@ -18,7 +18,6 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS tenants (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
-  slug TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'ACTIVE',
   subscription_plan TEXT NOT NULL DEFAULT 'YEARLY',
   subscription_start_date TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -35,7 +34,6 @@ CREATE TABLE IF NOT EXISTS tenants (
 CREATE TABLE IF NOT EXISTS store_requests (
   id SERIAL PRIMARY KEY,
   store_name TEXT NOT NULL,
-  requested_slug TEXT NOT NULL,
   owner_email TEXT NOT NULL,
   owner_phone TEXT DEFAULT '',
   business_address TEXT DEFAULT '',
@@ -52,7 +50,7 @@ CREATE TABLE IF NOT EXISTS store_requests (
 CREATE TABLE IF NOT EXISTS deleted_store_requests (
   id SERIAL PRIMARY KEY,
   request_id INTEGER,
-  requested_slug TEXT NOT NULL,
+  marker_key TEXT NOT NULL DEFAULT '',
   deleted_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -336,38 +334,38 @@ WHERE NOT EXISTS (SELECT 1 FROM users WHERE UPPER(role) = 'SUPERADMIN');
 UPDATE users SET password_hash = '$2b$10$7t3O9vYEMVeZ.VJsNDEf6eQ1xaQEQHEEf16nuz3GmbQcikzNRMCAK', quick_password = 'superadmin123', status = 'APPROVED', active = true WHERE UPPER(role) = 'SUPERADMIN';
 
 -- 1. DEPLOYED STORES (24 TENANTS)
-INSERT INTO tenants (id, name, slug, status, subscription_plan, subscription_start_date, subscription_end_date, subscription_status, theme_color, background_color, onboarding_completed, deleted_product_ids, created_at, updated_at) VALUES
-  (1, 'Apex Footwear Flagship', 'apex-footwear', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#2563EB', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (2, 'Metro Step Shoe Emporium', 'metro-step', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#7C3AED', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (3, 'Khyber Classic Leather & Chappal', 'khyber-leather', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#059669', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (4, 'Urban Sole Sneaker Studio', 'urban-sole', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#0891B2', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (5, 'Royal Walk Footwear Gallery', 'royal-walk', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#4F46E5', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (6, 'Margalla Trail & Comfort Shoes', 'margalla-shoes', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#0D9488', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (7, 'Chenab Leather & Boot House', 'chenab-boots', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#D97706', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (8, 'Multan Heritage Footwear', 'multan-footwear', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#DC2626', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (9, 'Sialkot Sports & Cleats Hub', 'sialkot-sports', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#2563EB', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (10, 'Clifton Luxe Shoe Boutique', 'clifton-luxe', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#9333EA', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (11, 'Model Town Family Shoe Mart', 'model-shoe-mart', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#0284C7', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (12, 'Quetta Bolan Leather Works', 'bolan-leather', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#059669', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (13, 'Gujranwala Grand Footwear', 'gujranwala-footwear', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#EA580C', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (14, 'Bahria Stride Sneaker Lounge', 'bahria-stride', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#4F46E5', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (15, 'Abbottabad Pine Valley Shoes', 'pine-valley-shoes', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#16A34A', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (16, 'Hyderabad Indus Shoe Palace', 'indus-shoe-palace', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#7C3AED', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (17, 'Sargodha Eagle Footwear Center', 'eagle-footwear', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#0891B2', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (18, 'Bahawalpur Derawar Leather Store', 'derawar-leather', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#B45309', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (19, 'Sukkur Barrage Footwear Mart', 'sukkur-footwear', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#2563EB', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (20, 'Mardan Premier Chappal & Shoes', 'mardan-premier', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#059669', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (21, 'Johar Town Athletic & Casuals', 'johar-athletic', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#6366F1', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (22, 'F-10 Markaz Executive Footwear', 'f10-executive', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#0F766E', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (23, 'Swat Mingora Mountain Boots', 'swat-mountain-boots', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#15803D', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
-  (24, 'DHA Y-Block Sole Emporium', 'dha-sole-emporium', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#7E22CE', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW());
+INSERT INTO tenants (id, name, status, subscription_plan, subscription_start_date, subscription_end_date, subscription_status, theme_color, background_color, onboarding_completed, deleted_product_ids, created_at, updated_at) VALUES
+  (1, 'Apex Footwear Flagship', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#2563EB', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (2, 'Metro Step Shoe Emporium', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#7C3AED', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (3, 'Khyber Classic Leather & Chappal', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#059669', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (4, 'Urban Sole Sneaker Studio', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#0891B2', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (5, 'Royal Walk Footwear Gallery', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#4F46E5', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (6, 'Margalla Trail & Comfort Shoes', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#0D9488', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (7, 'Chenab Leather & Boot House', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#D97706', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (8, 'Multan Heritage Footwear', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#DC2626', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (9, 'Sialkot Sports & Cleats Hub', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#2563EB', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (10, 'Clifton Luxe Shoe Boutique', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#9333EA', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (11, 'Model Town Family Shoe Mart', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#0284C7', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (12, 'Quetta Bolan Leather Works', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#059669', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (13, 'Gujranwala Grand Footwear', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#EA580C', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (14, 'Bahria Stride Sneaker Lounge', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#4F46E5', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (15, 'Abbottabad Pine Valley Shoes', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#16A34A', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (16, 'Hyderabad Indus Shoe Palace', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#7C3AED', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (17, 'Sargodha Eagle Footwear Center', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#0891B2', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (18, 'Bahawalpur Derawar Leather Store', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#B45309', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (19, 'Sukkur Barrage Footwear Mart', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#2563EB', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (20, 'Mardan Premier Chappal & Shoes', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#059669', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (21, 'Johar Town Athletic & Casuals', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#6366F1', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (22, 'F-10 Markaz Executive Footwear', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#0F766E', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (23, 'Swat Mingora Mountain Boots', 'ACTIVE', '6_MONTHS', NOW() - INTERVAL '25 days', NOW() + INTERVAL '150 days', 'ACTIVE', '#15803D', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW()),
+  (24, 'DHA Y-Block Sole Emporium', 'ACTIVE', 'YEARLY', NOW() - INTERVAL '25 days', NOW() + INTERVAL '330 days', 'ACTIVE', '#7E22CE', '#ffffff', true, '{}', NOW() - INTERVAL '25 days', NOW());
 
 -- 2. STORE REQUESTS
-INSERT INTO store_requests (id, store_name, requested_slug, owner_email, owner_phone, business_address, plan, request_type, notes, status, provisioned_tenant_id, initial_password, created_at, updated_at) VALUES
-  (1, 'Gwadar Coastal Footwear', 'gwadar-footwear', 'owner@gwadarfootwear.pk', '+92-321-8899001', 'Marine Drive Commercial Zone, Gwadar', 'YEARLY', 'NEW_STORE', 'Requesting new coastal flagship store deployment', 'PENDING', NULL, 'admin123', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days'),
-  (2, 'Gilgit Karakoram Trekker Boots', 'gilgit-trekker', 'info@gilgittrekker.pk', '+92-345-5566778', 'Airport Road, Gilgit', 'YEARLY', 'NEW_STORE', 'Mountain & trekking footwear store', 'PENDING', NULL, 'admin123', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'),
-  (3, 'Muzaffarabad Neelum Shoe Center', 'neelum-shoes', 'admin@neelumshoes.pk', '+92-300-5114499', 'Bank Road, Muzaffarabad', '6_MONTHS', 'NEW_STORE', 'Family shoe store onboarding request', 'PENDING', NULL, 'admin123', NOW() - INTERVAL '12 hours', NOW() - INTERVAL '12 hours'),
-  (4, 'Mirpur Royals Footwear Plaza', 'mirpur-royals', 'contact@mirpurroyals.pk', '+92-333-5889922', 'Allama Iqbal Road Sector F-1, Mirpur', 'YEARLY', 'NEW_STORE', 'Multi-story retail shoe plaza', 'PENDING', NULL, 'admin123', NOW() - INTERVAL '6 hours', NOW() - INTERVAL '6 hours');
+INSERT INTO store_requests (id, store_name, owner_email, owner_phone, business_address, plan, request_type, notes, status, provisioned_tenant_id, initial_password, created_at, updated_at) VALUES
+  (1, 'Gwadar Coastal Footwear', 'owner@gwadarfootwear.pk', '+92-321-8899001', 'Marine Drive Commercial Zone, Gwadar', 'YEARLY', 'NEW_STORE', 'Requesting new coastal flagship store deployment', 'PENDING', NULL, 'admin123', NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days'),
+  (2, 'Gilgit Karakoram Trekker Boots', 'info@gilgittrekker.pk', '+92-345-5566778', 'Airport Road, Gilgit', 'YEARLY', 'NEW_STORE', 'Mountain & trekking footwear store', 'PENDING', NULL, 'admin123', NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'),
+  (3, 'Muzaffarabad Neelum Shoe Center', 'admin@neelumshoes.pk', '+92-300-5114499', 'Bank Road, Muzaffarabad', '6_MONTHS', 'NEW_STORE', 'Family shoe store onboarding request', 'PENDING', NULL, 'admin123', NOW() - INTERVAL '12 hours', NOW() - INTERVAL '12 hours'),
+  (4, 'Mirpur Royals Footwear Plaza', 'contact@mirpurroyals.pk', '+92-333-5889922', 'Allama Iqbal Road Sector F-1, Mirpur', 'YEARLY', 'NEW_STORE', 'Multi-story retail shoe plaza', 'PENDING', NULL, 'admin123', NOW() - INTERVAL '6 hours', NOW() - INTERVAL '6 hours');
 
 -- 3. STORE SETTINGS (24 STORES)
 INSERT INTO company_settings (id, tenant_id, logo, address, phone, email, website, strn, tax_id, tax_rate, currency, currency_name, currency_symbol, invoice_prefix, purchase_prefix, barcode_prefix, invoice_footer, show_receipt_logo, receipt_logo, low_stock_limit, pricing_mode, pricing_policy_locked, is_installed, updated_at) VALUES
