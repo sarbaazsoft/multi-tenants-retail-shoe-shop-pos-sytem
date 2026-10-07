@@ -7,6 +7,7 @@ export interface TsplStickerOptions {
   gapMm?: number;    // default 2mm
   currencySymbol?: string;
   storeName?: string;
+  pricingPolicy?: string;
 }
 
 export function generateShoeStickerTspl(
@@ -25,7 +26,7 @@ export function generateShoeStickerTspl(
   const sku = String(product.sku || '').substring(0, 18);
   const barcode = String(product.barcode || sku || '00000000');
   const price = formatStockPrice(getProductRetailPrice(product));
-  const rawPolicy = String(product.pricingPolicy || 'FIXED').toUpperCase();
+  const rawPolicy = String(options.pricingPolicy || 'FIXED').toUpperCase();
   const isFixed = rawPolicy === 'FIXED';
   const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';
 

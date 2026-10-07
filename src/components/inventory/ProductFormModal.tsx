@@ -92,7 +92,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   onSuccess,
 }) => {
   const [currentStep, setCurrentStep] = useState<WizardStep>(1);
-  const [brands, setBrands] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>(STANDARD_FOOTWEAR_CATEGORIES);
   const [liveSettings, setLiveSettings] = useState<any>(companySettings);
 
@@ -364,30 +363,19 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           }
         }
 
-        // Fetch existing distinct brands and fixed pre-saved categories from store
+        // Fetch fixed pre-saved categories from store
         try {
-          const [bRes, cRes] = await Promise.all([
-            api.brandCategory.getBrands(),
-            api.brandCategory.getCategories(),
-          ]);
-          const brandList = Array.from(
-            new Set(
-              (bRes?.brands || [])
-                .map((b: any) => (typeof b === 'string' ? b : b.name)?.trim())
-                .filter(Boolean)
-            )
-          );
+          const cRes = await api.brandCategory.getCategories();
           const rawCatList = (cRes?.categories || [])
             .map((c: any) => normalizeFootwearCategory(typeof c === 'string' ? c : c.name))
             .filter(Boolean);
           const mergedCategories = Array.from(new Set([...STANDARD_FOOTWEAR_CATEGORIES, ...rawCatList]));
 
           if (isMounted) {
-            setBrands(brandList);
             setCategories(mergedCategories);
           }
         } catch (e) {
-          console.warn('Could not load brand/category suggestions:', e);
+          console.warn('Could not load category suggestions:', e);
           if (isMounted) {
             setCategories(STANDARD_FOOTWEAR_CATEGORIES);
           }
@@ -839,7 +827,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         barcode: finalBarcodeToSave,
         primaryImageUrl: primaryImageUrl.trim(),
         description: description.trim(),
-        pricingPolicy: normalizedPricing.pricingPolicy,
         costPrice: normalizedPricing.costPrice,
         minPrice: normalizedPricing.minPrice,
         maxPrice: normalizedPricing.maxPrice,
@@ -1063,7 +1050,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               <AiProductSuggester
                 imageUrl={primaryImageUrl}
                 onImageUrlChange={(url) => setPrimaryImageUrl(url)}
-                brands={brands}
                 categories={categories}
                 onSelectBrand={(bName) => handleBrandChange(bName)}
                 onSelectCategory={(cName) => handleCategoryChange(cName)}
@@ -1080,7 +1066,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Brand Input with Autocomplete Datalist */}
+                  {/* Brand Input (Standard Text Input) */}
                   <div>
                     <label className="block font-bold text-gray-800 dark:text-slate-200 text-xs mb-1.5">
                       Brand / Manufacturer <span className="text-red-500 dark:text-pink-400">*</span>
@@ -1089,17 +1075,11 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       <div className="flex-1 relative">
                         <input
                           type="text"
-                          list="product-brand-datalist"
                           value={brand}
                           onChange={(e) => handleBrandChange(e.target.value)}
-                          placeholder="Type or select brand (e.g. Nike, Adidas, Local)..."
+                          placeholder="Enter brand name (e.g. Nike, Adidas, Local)..."
                           className="capitalize w-full px-3 py-2 bg-white dark:bg-purple-500/20 border border-gray-300 dark:border-purple-400/40 rounded-xl text-xs font-medium text-gray-900 dark:text-purple-200 hover:bg-slate-50 dark:hover:bg-purple-500/30 dark:hover:text-white dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] outline-none focus:border-indigo-600 dark:focus:border-purple-400 transition"
                         />
-                        <datalist id="product-brand-datalist">
-                          {brands.map((bName, bIdx) => (
-                            <option key={`brand-dl-${bName}-${bIdx}`} value={bName} />
-                          ))}
-                        </datalist>
                       </div>
                       <div title={`Brand: ${currentBrandName}`} className="shrink-0">
                         <BrandLogo logo="" name={currentBrandName} size="md" />

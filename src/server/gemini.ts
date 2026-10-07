@@ -137,7 +137,6 @@ export const STRICT_FOOTWEAR_INVALID_ALERT =
 
 export interface BrandSuggestionMatch {
   suggestedName: string;
-  matchedId?: number | null;
   matchedName?: string | null;
   isExisting?: boolean;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
@@ -299,12 +298,12 @@ export function sanitizeShoeTitle(rawTitle: string): string {
  */
 export function matchBrand(
   suggestedBrand: string,
-  existingBrands: (string | { id?: number; name: string })[] = []
+  existingBrands: string[] = []
 ): BrandSuggestionMatch {
   const cleanSuggested = (suggestedBrand || '').trim();
   const lowerSuggested = cleanSuggested.toLowerCase();
 
-  const brandNames = existingBrands.map((b) => (typeof b === 'string' ? b : b.name));
+  const brandNames = existingBrands;
 
   // Check if brand is explicitly unknown
   const isUnknown =
@@ -443,7 +442,7 @@ export function matchCategory(
  */
 export async function analyzeProductImageWithGemini(
   imageSource: string,
-  existingBrands: (string | { id?: number; name: string })[] = [],
+  existingBrands: string[] = [],
   existingCategories: (string | { id?: number; name: string })[] = []
 ): Promise<AiProductAnalysisResult> {
   const ai = getGeminiClient();

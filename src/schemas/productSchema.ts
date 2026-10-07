@@ -115,7 +115,6 @@ export const productPricingSchema = z
       const price = Math.round(data.maxPrice ?? data.sellingPrice!);
       // Fixed Price Policy Rule: minPrice = maxPrice
       return {
-        pricingPolicy: 'FIXED' as const,
         costPrice,
         sellingPrice: price,
         minPrice: price,
@@ -126,7 +125,6 @@ export const productPricingSchema = z
       const maxPrice = Math.round(data.maxPrice!);
       // Negotiable Price Policy Rule: sellingPrice defaults to maxPrice (tag price)
       return {
-        pricingPolicy: 'NEGOTIABLE' as const,
         costPrice,
         sellingPrice: maxPrice,
         minPrice,

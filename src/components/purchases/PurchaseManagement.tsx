@@ -112,7 +112,7 @@ export const PurchaseManagement: React.FC<PurchaseManagementProps> = ({
 
   // Products & Product Selection
   const [products, setProducts] = useState<any[]>([]);
-  const [brands, setBrands] = useState<any[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [productQuery, setProductQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
@@ -321,7 +321,10 @@ export const PurchaseManagement: React.FC<PurchaseManagementProps> = ({
   const loadProducts = async () => {
     try {
       const res = await api.products.list();
-      setProducts(res.products || []);
+      const pList = res.products || [];
+      setProducts(pList);
+      const distinctBrands = Array.from(new Set(pList.map((p: any) => String(p.brand || '').trim()).filter(Boolean))).sort();
+      setBrands(distinctBrands);
     } catch (e: any) {
       console.warn('Notice loading products:', e?.message || e);
     }
@@ -329,31 +332,7 @@ export const PurchaseManagement: React.FC<PurchaseManagementProps> = ({
 
   const loadBrandsAndCategories = async () => {
     try {
-      const [bRes, cRes] = await Promise.all([
-        api.brandCategory.getBrands().catch(() => ({ brands: [] })),
-        api.brandCategory.getCategories().catch(() => ({ categories: [] })),
-      ]);
-      let brandList = bRes.brands || [];
-      if (!brandList.some((b: any) => b.name?.trim().toLowerCase() === 'local')) {
-        try {
-          const createRes = await api.brandCategory.createBrand('Local');
-          if (createRes?.brand) {
-            brandList = [createRes.brand, ...brandList];
-          }
-        } catch (_) {}
-      }
-
-      const seenB = new Set<string>();
-      const dedupedBrands: any[] = [];
-      for (const b of brandList) {
-        const name = (typeof b === 'string' ? b : b.name || '').trim();
-        if (name && !seenB.has(name.toLowerCase())) {
-          seenB.add(name.toLowerCase());
-          dedupedBrands.push(typeof b === 'string' ? { id: name, name } : b);
-        }
-      }
-      setBrands(dedupedBrands);
-
+      const cRes = await api.brandCategory.getCategories().catch(() => ({ categories: [] }));
       const seenC = new Set<string>();
       const dedupedCats: any[] = [];
       for (const c of (cRes.categories || [])) {
@@ -818,7 +797,7 @@ export const PurchaseManagement: React.FC<PurchaseManagementProps> = ({
 
     const matchesBrand =
       catalogModalBrand === 'ALL' ||
-      String(p.brandId || p.brand_id) === String(catalogModalBrand);
+      String(p.brand || p.brandName || '').toLowerCase() === catalogModalBrand.toLowerCase();
 
     const matchesCategory =
       catalogModalCategory === 'ALL' ||
@@ -2734,11 +2713,11 @@ export const PurchaseManagement: React.FC<PurchaseManagementProps> = ({
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-purple-500/20 border border-slate-200 dark:border-purple-400/40 rounded-xl outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 font-medium text-slate-900 dark:text-purple-200 hover:bg-slate-100 dark:hover:bg-purple-500/30 dark:hover:text-white dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] text-xs shadow-2xs cursor-pointer"
                 >
                   <option value="ALL" className="dark:bg-[#120726] dark:text-purple-100">All Brands</option>
-                  {brands.map((b, idx) => {
-                    const isLocal = b.name?.trim().toLowerCase() === 'local';
+                  {brands.map((bName, idx) => {
+                    const isLocal = bName.trim().toLowerCase() === 'local';
                     return (
-                      <option key={`pm-brand-opt-${b.id || b.name || idx}`} value={b.id} className="dark:bg-[#120726] dark:text-purple-100">
-                        {b.name} {isLocal ? '(Default)' : ''}
+                      <option key={`pm-brand-opt-${bName || idx}`} value={bName} className="dark:bg-[#120726] dark:text-purple-100">
+                        {bName} {isLocal ? '(Default)' : ''}
                       </option>
                     );
                   })}

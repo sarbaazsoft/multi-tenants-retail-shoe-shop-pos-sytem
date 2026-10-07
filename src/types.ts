@@ -174,14 +174,6 @@ export interface CompanySettings {
   updatedAt: string;
 }
 
-export interface Brand {
-  id?: number;
-  name: string;
-  logo?: string;
-  productCount?: number;
-  totalUnits?: number;
-}
-
 export interface Category {
   id?: number;
   name: string;

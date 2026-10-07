@@ -67,7 +67,6 @@ export function getProductRetailPrice(product: any, companySettings?: any): numb
 
   const rawPolicy = String(
     companySettings?.pricingPolicy ||
-    product?.pricingPolicy ||
     'FIXED'
   ).toUpperCase();
   const isFixed = rawPolicy === 'FIXED';
@@ -105,7 +104,6 @@ export function getProductMinFloorPrice(product: any, companySettings?: any): nu
 
   const rawPolicy = String(
     companySettings?.pricingPolicy ||
-    product?.pricingPolicy ||
     'FIXED'
   ).toUpperCase();
   const isFixed = rawPolicy === 'FIXED';

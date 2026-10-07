@@ -637,8 +637,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         : 0
     )));
 
-    const itemPolicy: 'FIXED' | 'NEGOTIABLE' = isFixedPolicy ? 'FIXED' : 'NEGOTIABLE';
-    const isItemFixed = itemPolicy === 'FIXED';
+    const isItemFixed = isFixedPolicy;
 
     const retailPrice = getProductRetailPrice(product, companySettings);
     const minFloor = getProductMinFloorPrice(product, companySettings);
@@ -692,7 +691,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           barcode: product.barcode,
           totalStock: product.totalStock,
           costPrice: cost,
-          pricingPolicy: itemPolicy,
           salePrice: itemSalePrice,
           minSalePrice: itemMinSalePrice,
           maxSalePrice: itemMaxSalePrice,
@@ -764,7 +762,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     const item = cart.find((i) => i.productId === productId);
     if (!item) return;
 
-    const isItemFixed = (item.pricingPolicy || (isFixedPolicy ? 'FIXED' : 'NEGOTIABLE')) === 'FIXED';
+    const isItemFixed = isFixedPolicy;
     const targetFixedPrice = Math.round(item.salePrice || item.minSalePrice || item.unitPrice);
 
     if (isItemFixed) {
@@ -1546,7 +1544,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     </tr>
                   ))}
                 {cart.map((item) => {
-                  const isItemFixed = (item.pricingPolicy || (isFixedPolicy ? 'FIXED' : 'NEGOTIABLE')) === 'FIXED';
+                  const isItemFixed = isFixedPolicy;
                   const cost = item.costPrice || 0;
                   const itemMinFloor = Math.round(item.minSalePrice || (isItemFixed ? item.unitPrice : 0));
                   const itemMaxPrice = Math.round(item.maxSalePrice || item.unitPrice || 0);

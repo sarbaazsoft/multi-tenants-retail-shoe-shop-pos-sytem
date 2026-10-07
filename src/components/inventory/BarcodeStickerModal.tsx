@@ -102,7 +102,6 @@ export const BarcodeStickerModal: React.FC<BarcodeStickerModalProps> = ({
 
   const rawPolicy = String(
     companySettings?.pricingPolicy ||
-    product?.pricingPolicy ||
     'FIXED'
   ).toUpperCase();
   const isFixedPolicy = rawPolicy === 'FIXED';

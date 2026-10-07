@@ -122,10 +122,6 @@ const mockStore: Record<string, any[]> = {
       updated_at: new Date().toISOString(),
     },
   ],
-  brands: [
-    { id: 1, tenant_id: 1, name: 'StepSync', created_at: new Date().toISOString() },
-    { id: 2, tenant_id: 1, name: 'Local', created_at: new Date().toISOString() },
-  ],
   categories: [
     { id: 1, tenant_id: 1, name: 'Casual Shoes', created_at: new Date().toISOString() },
     { id: 2, tenant_id: 1, name: 'Formal Dress Shoes', created_at: new Date().toISOString() },
@@ -177,7 +173,6 @@ let mockIdCounters: Record<string, number> = {
   tenants: 2,
   users: 3,
   company_settings: 2,
-  brands: 3,
   categories: 4,
   products: 2,
   customers: 1,
@@ -1136,10 +1131,6 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
 
   if (upper.startsWith('SELECT') && upper.includes('FROM PURCHASES') && upper.includes('COUNT(*)')) {
     return { rows: [{ count: String(mockStore.purchases.length), total: '0' } as unknown as T], rowCount: 1 };
-  }
-
-  if (upper.startsWith('SELECT') && upper.includes('FROM BRANDS')) {
-    return { rows: mockStore.brands as unknown as T[], rowCount: mockStore.brands.length };
   }
 
   if (upper.startsWith('SELECT') && upper.includes('FROM CATEGORIES')) {

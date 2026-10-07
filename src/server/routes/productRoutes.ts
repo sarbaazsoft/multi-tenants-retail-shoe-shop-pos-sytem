@@ -233,9 +233,9 @@ router.get('/suggest-sku', requireAuth, async (req: AuthenticatedRequest, res: R
   try {
     await ensureProductAndSettingsColumns();
     const tenantId = extractStrictTenantId(req);
-    const { brand, brandId, brandName, category, categoryId, categoryName, article, productId, excludeId } = req.query;
+    const { brand, category, categoryId, categoryName, article, productId, excludeId } = req.query;
 
-    const targetBrandName = String(brand || brandName || brandId || '').trim();
+    const targetBrandName = String(brand || '').trim();
     const targetCategoryName = String(category || categoryName || categoryId || '').trim();
     const parsedExcludeId = excludeId ? parseInt(String(excludeId), 10) : null;
 
@@ -478,7 +478,7 @@ router.post('/ai-suggest', requireAuth, async (req: AuthenticatedRequest, res: R
 
     const result = await analyzeProductImageWithGemini(
       image,
-      brandsRes.rows || [],
+      (brandsRes.rows || []).map((r) => r.name),
       categoriesRes.rows || []
     );
 
@@ -770,7 +770,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   try {
     await ensureProductAndSettingsColumns();
     const tenantId = extractStrictTenantId(req);
-    const { search, brand, category, brandId, categoryId, lowStockOnly, limit } = req.query;
+    const { search, brand, category, categoryId, lowStockOnly, limit } = req.query;
 
     let query = `
       SELECT p.id, p.tenant_id, p.tenant_product_no, p.name, p.brand, p.category, p.sku, p.article, p.barcode,
@@ -788,7 +788,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       query += ` AND (LOWER(COALESCE(p.article, '')) LIKE $${params.length} OR LOWER(p.sku) LIKE $${params.length} OR p.barcode LIKE $${params.length} OR LOWER(p.name) LIKE $${params.length} OR LOWER(p.brand) LIKE $${params.length} OR LOWER(p.category) LIKE $${params.length})`;
     }
 
-    const brandFilter = (brand || brandId) ? String(brand || brandId).trim() : '';
+    const brandFilter = brand ? String(brand).trim() : '';
     if (brandFilter) {
       params.push(brandFilter.toLowerCase());
       query += ` AND LOWER(p.brand) = $${params.length}`;
@@ -859,9 +859,7 @@ router.post('/', requireAuth, requireAdmin, async (req: AuthenticatedRequest, re
       name,
       brand,
       category,
-      brandName,
       categoryName,
-      brandId,
       categoryId,
       article,
       sku,
@@ -886,6 +884,10 @@ router.post('/', requireAuth, requireAdmin, async (req: AuthenticatedRequest, re
       initialStock,
       lowStockLimit,
     } = req.body;
+
+    if (brand !== undefined && typeof brand !== 'string') {
+      return res.status(400).json({ error: 'Brand must be a text string.' });
+    }
 
     if (!article || !article.trim()) {
       return res.status(400).json({ error: 'Article is a mandatory field.' });
@@ -926,7 +928,7 @@ router.post('/', requireAuth, requireAdmin, async (req: AuthenticatedRequest, re
     } = validation.data;
 
     // Brand and Category strings
-    const finalBrand = (brand || brandName || (typeof brandId === 'string' ? brandId : '') || '').trim() || 'Local';
+    const finalBrand = (typeof brand === 'string' ? brand.trim() : '') || 'Local';
     const finalCategory = normalizeFootwearCategory(
       category || categoryName || (typeof categoryId === 'string' ? categoryId : '') || 'Men'
     );
@@ -1100,7 +1102,6 @@ router.put('/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, 
       name,
       brand,
       category,
-      brandName,
       categoryName,
       article,
       sku,
@@ -1126,6 +1127,10 @@ router.put('/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, 
       active,
     } = req.body;
 
+    if (brand !== undefined && typeof brand !== 'string') {
+      return res.status(400).json({ error: 'Brand must be a text string.' });
+    }
+
     const currentRes = await pgClient.query('SELECT * FROM products WHERE id = $1 AND COALESCE(tenant_id, 1) = $2', [id, tenantId]);
     if (currentRes.rows.length === 0) {
       return res.status(404).json({ error: 'Product not found in your store.' });
@@ -1134,8 +1139,8 @@ router.put('/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, 
     const settings = await getCompanyPricingSettings(tenantId);
 
     const finalBrand = brand !== undefined
-      ? (String(brand).trim() || 'Local')
-      : (brandName !== undefined ? (String(brandName).trim() || 'Local') : (current.brand || 'Local'));
+      ? (typeof brand === 'string' ? brand.trim() || 'Local' : 'Local')
+      : (current.brand || 'Local');
     const finalCategory = category !== undefined
       ? normalizeFootwearCategory(String(category))
       : (categoryName !== undefined ? normalizeFootwearCategory(String(categoryName)) : normalizeFootwearCategory(current.category || 'Men'));
@@ -1364,7 +1369,7 @@ router.post('/bulk-import', requireAuth, requireAdmin, async (req: Authenticated
         const rowStrategy: 'MERGE' | 'OVERWRITE' | 'SKIP' =
           rawItem.duplicateAction || duplicateStrategy || 'MERGE';
 
-        const rawBrand = String(rawItem.brand ?? rawItem.brandName ?? '').trim();
+        const rawBrand = String(rawItem.brand ?? '').trim();
         const finalBrand = rawBrand || 'Local';
 
         const rawCategory = String(rawItem.category ?? rawItem.categoryName ?? '').trim();

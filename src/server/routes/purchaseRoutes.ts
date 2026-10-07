@@ -225,12 +225,11 @@ router.post('/', requireAuth, forbidCashier, requireAdmin, async (req: Authentic
         id: number;
         article: string;
         total_stock: number;
-        pricing_policy: string | null;
         pricing_mode: string | null;
         min_price: number;
         max_price: number;
       }>(
-        `SELECT p.id, p.article, p.total_stock, p.pricing_policy,
+        `SELECT p.id, p.article, p.total_stock,
                 (SELECT cs.pricing_mode FROM company_settings cs WHERE cs.tenant_id = $2 LIMIT 1) AS pricing_mode,
                 p.min_price, p.max_price
          FROM products p WHERE p.id = $1 AND p.tenant_id = $2 FOR UPDATE`,
@@ -248,7 +247,7 @@ router.post('/', requireAuth, forbidCashier, requireAdmin, async (req: Authentic
       totalAmount = Math.round((totalAmount + subtotal) * 100) / 100;
 
       // Update product stock and procurement cost price while keeping min/max prices above cost.
-      const isFixedPrice = String(prod.pricing_policy || prod.pricing_mode || 'FIXED').toUpperCase() === 'FIXED';
+      const isFixedPrice = String(prod.pricing_mode || 'FIXED').toUpperCase() === 'FIXED';
       const nextMinPrice = Math.max(Math.round(unitPrice), Number(prod.min_price) || 0);
       const nextMaxPrice = isFixedPrice
         ? Math.max(nextMinPrice, Number(prod.max_price) || 0)

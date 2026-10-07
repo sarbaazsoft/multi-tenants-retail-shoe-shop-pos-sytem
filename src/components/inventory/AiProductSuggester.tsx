@@ -19,19 +19,17 @@ import { api } from '../../services/api.ts';
 import type {
   AiProductSuggestionResult,
   AiConfidenceLevel,
-  Brand,
   Category,
 } from '../../types.ts';
 
 interface AiProductSuggesterProps {
   imageUrl: string;
   onImageUrlChange: (url: string) => void;
-  brands?: Brand[] | string[] | any[];
+  brands?: string[];
   categories?: Category[] | string[] | any[];
   onSelectBrand: (brandName: string) => void;
   onSelectCategory: (categoryName: string) => void;
   onSetTitle: (title: string) => void;
-  onBrandsUpdated?: (updatedBrands: any[]) => void;
   onCategoriesUpdated?: (updatedCategories: any[]) => void;
 }
 
@@ -63,7 +61,6 @@ export const AiProductSuggester: React.FC<AiProductSuggesterProps> = ({
   onSelectBrand,
   onSelectCategory,
   onSetTitle,
-  onBrandsUpdated,
   onCategoriesUpdated,
 }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);

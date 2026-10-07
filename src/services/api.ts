@@ -809,9 +809,6 @@ export const api = {
     },
   },
   brandCategory: {
-    getBrands: () => apiFetch('/brands'),
-    createBrand: (name: string) => apiFetch('/brands', { method: 'POST', body: { name } }),
-    deleteBrand: (id: number) => apiFetch(`/brands/${id}`, { method: 'DELETE' }),
     getCategories: () => apiFetch('/categories'),
     createCategory: (name: string) => apiFetch('/categories', { method: 'POST', body: { name } }),
     deleteCategory: (id: number) => apiFetch(`/categories/${id}`, { method: 'DELETE' }),

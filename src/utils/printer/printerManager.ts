@@ -236,6 +236,7 @@ export async function executePrintStickers(
           heightMm: settings.stickerHeightMm,
           currencySymbol: companySettings?.currency_symbol || 'Rs.',
           storeName: companySettings?.name || companySettings?.company_name || 'Retail Store',
+          pricingPolicy: companySettings?.pricingPolicy || companySettings?.pricing_mode || 'FIXED',
         });
         await sendRawToUsb(device, payload);
         return { success: true, modeUsed: 'webusb' };
@@ -250,6 +251,7 @@ export async function executePrintStickers(
         heightMm: settings.stickerHeightMm,
         currencySymbol: companySettings?.currency_symbol || 'Rs.',
         storeName: companySettings?.name || companySettings?.company_name || 'Retail Store',
+        pricingPolicy: companySettings?.pricingPolicy || companySettings?.pricing_mode || 'FIXED',
       });
       await sendToLocalAgent(settings.agentEndpoint, 'sticker', payload);
       return { success: true, modeUsed: 'local_agent' };
@@ -283,6 +285,7 @@ export async function executePrintBatchStickers(
             heightMm: settings.stickerHeightMm,
             currencySymbol: companySettings?.currency_symbol || 'Rs.',
             storeName: companySettings?.name || companySettings?.company_name || 'Retail Store',
+            pricingPolicy: companySettings?.pricingPolicy || companySettings?.pricing_mode || 'FIXED',
           });
           buffers.push(payload);
           totalLen += payload.length;
@@ -311,6 +314,7 @@ export async function executePrintBatchStickers(
           heightMm: settings.stickerHeightMm,
           currencySymbol: companySettings?.currency_symbol || 'Rs.',
           storeName: companySettings?.name || companySettings?.company_name || 'Retail Store',
+          pricingPolicy: companySettings?.pricingPolicy || companySettings?.pricing_mode || 'FIXED',
         });
         buffers.push(payload);
         totalLen += payload.length;

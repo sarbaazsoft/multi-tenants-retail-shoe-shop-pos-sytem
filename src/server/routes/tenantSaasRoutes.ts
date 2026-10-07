@@ -1283,7 +1283,6 @@ router.get('/superadmin/tenants/:id/export-sql', requireAuth, requireSuperAdmin,
       { table: 'tenants', where: 'WHERE id = $1', params: [tenantId] },
       { table: 'company_settings', where: 'WHERE tenant_id = $1', params: [tenantId] },
       { table: 'users', where: "WHERE tenant_id = $1 AND role != 'SUPERADMIN' ORDER BY id ASC", params: [tenantId] },
-      { table: 'brands', where: 'WHERE tenant_id = $1 ORDER BY id ASC', params: [tenantId] },
       { table: 'categories', where: 'WHERE tenant_id = $1 ORDER BY id ASC', params: [tenantId] },
       { table: 'products', where: 'WHERE tenant_id = $1 ORDER BY id ASC', params: [tenantId] },
       { table: 'suppliers', where: 'WHERE tenant_id = $1 ORDER BY id ASC', params: [tenantId] },
@@ -1345,7 +1344,6 @@ router.get('/superadmin/export-sql', requireAuth, requireSuperAdmin, async (_req
       'store_requests',
       'company_settings',
       'users',
-      'brands',
       'categories',
       'products',
       'suppliers',
@@ -1425,7 +1423,6 @@ router.post('/superadmin/import-sql', requireAuth, requireSuperAdmin, async (req
       'store_requests',
       'company_settings',
       'users',
-      'brands',
       'categories',
       'products',
       'suppliers',
@@ -1580,7 +1577,6 @@ async function handleDeleteTenantStore(req: AuthenticatedRequest, res: Response)
         params: [tenantId],
       },
       { sql: `DELETE FROM products WHERE tenant_id = $1`, params: [tenantId] },
-      { sql: `DELETE FROM brands WHERE tenant_id = $1`, params: [tenantId] },
       { sql: `DELETE FROM categories WHERE tenant_id = $1`, params: [tenantId] },
       { sql: `DELETE FROM customers WHERE tenant_id = $1`, params: [tenantId] },
       { sql: `DELETE FROM suppliers WHERE tenant_id = $1`, params: [tenantId] },
@@ -2364,9 +2360,9 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
         await pgClient.query(
           `INSERT INTO products (
             tenant_id, name, article, sku, barcode, brand, category,
-            cost_price, min_price, max_price, pricing_policy, total_stock, low_stock_limit, primary_image_url, active
-          ) VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, '/assets/images/hd-07.jpg', true)`,
-          [tenant.id, pName, pSku, pBarcode, pBrand, pCategory, pCost, pMin, tagPrice, finalPricingMode, pStock, finalLowStockLimit]
+            cost_price, min_price, max_price, total_stock, low_stock_limit, primary_image_url, active
+          ) VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '/assets/images/hd-07.jpg', true)`,
+          [tenant.id, pName, pSku, pBarcode, pBrand, pCategory, pCost, pMin, tagPrice, pStock, finalLowStockLimit]
         );
       }
     }

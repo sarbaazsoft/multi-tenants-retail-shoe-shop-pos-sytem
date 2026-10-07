@@ -440,7 +440,6 @@ export function exportStickersToPdf(
       if (showPrice) {
         const isFixed = String(
           companySettings?.pricingPolicy ||
-          product?.pricingPolicy ||
           'FIXED'
         ).toUpperCase() === 'FIXED';
         const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';
@@ -571,7 +570,6 @@ export function exportBatchStickersToPdf(
         if (showPrice) {
           const isFixed = String(
             companySettings?.pricingPolicy ||
-            prod?.pricingPolicy ||
             'FIXED'
           ).toUpperCase() === 'FIXED';
           const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';
@@ -641,7 +639,6 @@ export function exportBatchStickersToPdf(
         if (showPrice) {
           const isFixed = String(
             companySettings?.pricingPolicy ||
-            prod?.pricingPolicy ||
             'FIXED'
           ).toUpperCase() === 'FIXED';
           const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';
@@ -908,7 +905,6 @@ export function exportStickersToImage(
     if (showPrice) {
       const isFixed = String(
         companySettings?.pricingPolicy ||
-        product?.pricingPolicy ||
         'FIXED'
       ).toUpperCase() === 'FIXED';
       const pricePrefix = isFixed ? 'Fixed Price :' : 'Price :';

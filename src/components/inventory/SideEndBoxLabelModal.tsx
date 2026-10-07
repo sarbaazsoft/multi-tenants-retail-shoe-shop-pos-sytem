@@ -59,7 +59,6 @@ export const SideEndBoxLabelModal: React.FC<SideEndBoxLabelModalProps> = ({
 
   const rawPolicy = String(
     companySettings?.pricingPolicy ||
-    product?.pricingPolicy ||
     'FIXED'
   ).toUpperCase();
   const isFixedPolicy = rawPolicy === 'FIXED';

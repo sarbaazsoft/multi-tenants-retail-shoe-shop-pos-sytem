@@ -67,7 +67,6 @@ export const REQUIRED_DATABASE_TABLES = [
   'deleted_store_requests',
   'password_reset_tokens',
   'company_settings',
-  'brands',
   'categories',
   'products',
   'customers',
@@ -169,12 +168,6 @@ const DATABASE_TABLE_DDL: string[] = [
     pricing_policy_locked BOOLEAN NOT NULL DEFAULT false,
     is_installed BOOLEAN DEFAULT false,
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-  )`,
-  `CREATE TABLE IF NOT EXISTS brands (
-    id SERIAL PRIMARY KEY,
-    tenant_id INTEGER NOT NULL DEFAULT 1,
-    name TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
   )`,
   `CREATE TABLE IF NOT EXISTS categories (
     id SERIAL PRIMARY KEY,
@@ -360,8 +353,6 @@ const DATABASE_INDEX_DDL: string[] = [
   `CREATE INDEX IF NOT EXISTS users_tenant_idx ON users(tenant_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique_idx ON users (LOWER(BTRIM(email)))`,
   `CREATE INDEX IF NOT EXISTS company_settings_tenant_idx ON company_settings(tenant_id)`,
-  `CREATE INDEX IF NOT EXISTS brands_tenant_idx ON brands(tenant_id)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS brands_tenant_name_lower_idx ON brands(tenant_id, LOWER(TRIM(name)))`,
   `CREATE INDEX IF NOT EXISTS categories_tenant_idx ON categories(tenant_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS categories_tenant_name_lower_idx ON categories(tenant_id, LOWER(TRIM(name)))`,
   `CREATE INDEX IF NOT EXISTS products_tenant_idx ON products(tenant_id)`,
@@ -412,8 +403,9 @@ export async function ensureDatabaseSchema(): Promise<void> {
         await pgClient.exec(ddl);
       }
 
-      // 1b. Ensure deprecated slug/subdomain columns are permanently removed if present from earlier versions
+      // 1b. Ensure deprecated tables, columns, and slug/subdomain columns are permanently removed
       await pgClient.exec(`
+        DROP TABLE IF EXISTS brands CASCADE;
         ALTER TABLE tenants DROP COLUMN IF EXISTS slug;
         ALTER TABLE tenants DROP COLUMN IF EXISTS subdomain;
         ALTER TABLE tenants DROP COLUMN IF EXISTS sub_domain;
