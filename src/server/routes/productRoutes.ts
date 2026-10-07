@@ -20,7 +20,10 @@ import {
   normalizeFootwearCategory,
 } from '../../utils/sku.ts';
 import { analyzeProductImageWithGemini } from '../gemini.ts';
-import { validateAndNormalizeProductPricing } from '../../schemas/productSchema.ts';
+import {
+  validateAndNormalizeProductPricing,
+  validateProductBrand,
+} from '../../schemas/productSchema.ts';
 
 const router = Router();
 
@@ -885,8 +888,14 @@ router.post('/', requireAuth, requireAdmin, async (req: AuthenticatedRequest, re
       lowStockLimit,
     } = req.body;
 
-    if (brand !== undefined && typeof brand !== 'string') {
-      return res.status(400).json({ error: 'Brand must be a text string.' });
+    if (brand !== undefined) {
+      if (typeof brand !== 'string') {
+        return res.status(400).json({ error: 'Brand must be a text string.' });
+      }
+      const brandValidation = validateProductBrand(brand);
+      if (!brandValidation.success) {
+        return res.status(400).json({ error: brandValidation.error });
+      }
     }
 
     if (!article || !article.trim()) {
@@ -1127,8 +1136,14 @@ router.put('/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, 
       active,
     } = req.body;
 
-    if (brand !== undefined && typeof brand !== 'string') {
-      return res.status(400).json({ error: 'Brand must be a text string.' });
+    if (brand !== undefined) {
+      if (typeof brand !== 'string') {
+        return res.status(400).json({ error: 'Brand must be a text string.' });
+      }
+      const brandValidation = validateProductBrand(brand);
+      if (!brandValidation.success) {
+        return res.status(400).json({ error: brandValidation.error });
+      }
     }
 
     const currentRes = await pgClient.query('SELECT * FROM products WHERE id = $1 AND COALESCE(tenant_id, 1) = $2', [id, tenantId]);

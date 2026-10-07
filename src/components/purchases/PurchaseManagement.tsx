@@ -211,7 +211,7 @@ export const PurchaseManagement: React.FC<PurchaseManagementProps> = ({
     loadPurchaseReturns();
     loadProducts();
     loadSuppliers();
-    loadBrandsAndCategories();
+    loadCategories();
 
     // Check for pending purchase entry from Quick Price search bar
     const handleNewPurchaseEvent = (e: any) => {
@@ -330,9 +330,9 @@ export const PurchaseManagement: React.FC<PurchaseManagementProps> = ({
     }
   };
 
-  const loadBrandsAndCategories = async () => {
+  const loadCategories = async () => {
     try {
-      const cRes = await api.brandCategory.getCategories().catch(() => ({ categories: [] }));
+      const cRes = await api.categories.getCategories().catch(() => ({ categories: [] }));
       const seenC = new Set<string>();
       const dedupedCats: any[] = [];
       for (const c of (cRes.categories || [])) {

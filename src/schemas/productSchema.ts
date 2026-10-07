@@ -217,3 +217,31 @@ export function validateAndNormalizeProductPricing(input: {
     errors,
   };
 }
+
+/**
+ * Zod Schema for Product Brand validation.
+ * Brand is validated and stored as a plain text string rather than a relational ID.
+ */
+export const productBrandSchema = z
+  .string({
+    message: 'Brand must be a text string.',
+  })
+  .trim()
+  .min(1, 'Brand is required.')
+  .max(100, 'Brand name cannot exceed 100 characters.');
+
+export function validateProductBrand(brand: unknown): {
+  success: boolean;
+  brand: string;
+  error?: string;
+} {
+  const result = productBrandSchema.safeParse(brand);
+  if (result.success) {
+    return { success: true, brand: result.data };
+  }
+  return {
+    success: false,
+    brand: typeof brand === 'string' && brand.trim() ? brand.trim() : 'Local',
+    error: result.error.issues[0]?.message || 'Invalid brand text.',
+  };
+}

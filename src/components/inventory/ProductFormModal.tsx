@@ -365,7 +365,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
         // Fetch fixed pre-saved categories from store
         try {
-          const cRes = await api.brandCategory.getCategories();
+          const cRes = await api.categories.getCategories();
           const rawCatList = (cRes?.categories || [])
             .map((c: any) => normalizeFootwearCategory(typeof c === 'string' ? c : c.name))
             .filter(Boolean);

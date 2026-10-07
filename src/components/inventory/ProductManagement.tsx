@@ -151,7 +151,7 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({
 
   const loadFilterData = async () => {
     try {
-      const cRes = await api.brandCategory.getCategories();
+      const cRes = await api.categories.getCategories();
       const seenC = new Set<string>();
       const uniqueC: any[] = [];
       for (const c of (cRes.categories || [])) {

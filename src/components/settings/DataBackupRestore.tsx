@@ -527,7 +527,7 @@ export const DataBackupRestore: React.FC<DataBackupRestoreProps> = ({
           </div>
 
           <div className="text-[11px] text-slate-400 dark:text-slate-400 font-medium inline-flex items-center gap-1">
-            {stats?.counts?.categories ?? 0} categories • {stats?.counts?.brands ?? 0} brands
+            {stats?.counts?.categories ?? 0} categories
           </div>
         </motion.div>
 
@@ -645,7 +645,7 @@ export const DataBackupRestore: React.FC<DataBackupRestoreProps> = ({
                 </li>
                 <li className="flex items-center gap-1.5">
                   <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>Brands &amp; Categories ({(stats?.counts?.brands || 0) + (stats?.counts?.categories || 0)})</span>
+                  <span>Categories ({stats?.counts?.categories || 0})</span>
                 </li>
                 <li className="flex items-center gap-1.5">
                   <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />

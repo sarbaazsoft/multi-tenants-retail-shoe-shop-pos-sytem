@@ -876,7 +876,6 @@ export async function dropAllTables(): Promise<void> {
       customers,
       suppliers,
       categories,
-      brands,
       api_tokens,
       company_settings,
       users

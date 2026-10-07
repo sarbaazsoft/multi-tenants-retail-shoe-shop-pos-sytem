@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   Lock,
   Mail,
+  Phone,
   Server,
   ShieldCheck,
   Sparkles,
@@ -38,6 +39,7 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
   const [status, setStatus] = useState<InstallStatus | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -72,6 +74,7 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
     event.preventDefault();
     setError('');
     const normalizedEmail = email.trim().toLowerCase();
+    const cleanPhone = phone.trim();
     if (!status?.hasSuperAdmin) {
       if (!name.trim()) {
         setError('Enter the superadmin name.');
@@ -79,6 +82,15 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
       }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalizedEmail)) {
         setError('Enter a valid email address.');
+        return;
+      }
+      if (!cleanPhone) {
+        setError("Enter the superadmin's phone / WhatsApp number.");
+        return;
+      }
+      const digits = cleanPhone.replace(/\D/g, '');
+      if (digits.length < 7 || digits.length > 15) {
+        setError('Enter a valid phone / WhatsApp number (7-15 digits, e.g. +923001234567 or +15550199).');
         return;
       }
       if (password.length < 8) {
@@ -92,7 +104,13 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
     }
     setSaving(true);
     try {
-      await api.install.bootstrap({ name: name.trim(), email: normalizedEmail, password });
+      await api.install.installPlatform({
+        name: name.trim(),
+        email: normalizedEmail,
+        phone: cleanPhone,
+        whatsapp: cleanPhone,
+        password,
+      });
       onCompleted();
     } catch (err: any) {
       setError(err?.message || 'Installation could not be completed.');
@@ -236,7 +254,7 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
                   <span className="text-[11px] text-gray-400 dark:text-slate-500 font-medium">Step 1 of 2</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {/* Superadmin name */}
                   <label className="block">
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center justify-between">
@@ -283,6 +301,31 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1.5">
                       <Mail className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
                       <span>Master login email for SuperAdmin C-Panel</span>
+                    </p>
+                  </label>
+
+                  {/* Superadmin Phone / WhatsApp */}
+                  <label className="block sm:col-span-2 lg:col-span-1">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center justify-between">
+                      <span>
+                        Phone / WhatsApp <span className="text-rose-500 font-bold">*</span>
+                      </span>
+                    </span>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 text-slate-400 dark:text-purple-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                      <input
+                        required
+                        type="tel"
+                        autoComplete="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+92 300 1234567"
+                        className="w-full h-11 pl-10 pr-3.5 rounded-xl border border-slate-300 dark:border-slate-800 bg-slate-50 dark:bg-[#060B18]/90 font-mono font-medium text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 outline-none transition-all focus:border-blue-500 dark:focus:border-purple-400 focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                      <span>WhatsApp notifications &amp; recovery contact</span>
                     </p>
                   </label>
                 </div>

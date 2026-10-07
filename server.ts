@@ -21,7 +21,7 @@ import { tenantRoutingMiddleware } from './src/server/middleware/tenantMiddlewar
 import installRoutes, { checkInstallationStatus } from './src/server/routes/installRoutes.ts';
 import authRoutes from './src/server/routes/authRoutes.ts';
 import productRoutes from './src/server/routes/productRoutes.ts';
-import brandCategoryRoutes from './src/server/routes/brandCategoryRoutes.ts';
+import categoryRoutes from './src/server/routes/categoryRoutes.ts';
 import posRoutes from './src/server/routes/posRoutes.ts';
 import returnRoutes from './src/server/routes/returnRoutes.ts';
 import supplierRoutes from './src/server/routes/supplierRoutes.ts';
@@ -225,7 +225,7 @@ app.use('/api', tenantSaasRoutes);
 app.use('/api/install', installRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
-app.use('/api', brandCategoryRoutes);
+app.use('/api', categoryRoutes);
 app.use('/api/pos', posRoutes);
 app.use('/api/returns', returnRoutes);
 app.use('/api/suppliers', supplierRoutes);

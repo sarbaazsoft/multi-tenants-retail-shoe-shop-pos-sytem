@@ -248,7 +248,7 @@ router.get('/status', async (_req: Request, res: Response) => {
 // First-run bootstrap: create schema and the operator-provided superadmin only.
 // It intentionally does not insert stores, demo rows, or default credentials.
 // =========================================================================
-router.post('/bootstrap', async (req: Request, res: Response) => {
+router.post(['/bootstrap', '/install-platform'], async (req: Request, res: Response) => {
   try {
     await pgClient.waitReady;
 
@@ -260,8 +260,27 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
     const name = String(req.body?.name || '').trim();
     const email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '');
-    if (!before.hasSuperAdmin && (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || password.length < 8)) {
-      return res.status(400).json({ error: 'Name, email, and a password of at least 8 characters are required.' });
+    const phone = String(req.body?.phone || req.body?.whatsapp || req.body?.phone_whatsapp || '').trim();
+
+    if (!before.hasSuperAdmin) {
+      if (!name) {
+        return res.status(400).json({ error: 'Superadmin name is required.' });
+      }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        return res.status(400).json({ error: 'A valid superadmin email address is required.' });
+      }
+      if (!phone) {
+        return res.status(400).json({ error: "Superadmin phone / WhatsApp number is required." });
+      }
+      const phoneDigits = phone.replace(/\D/g, '');
+      if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+        return res.status(400).json({
+          error: 'Enter a valid superadmin phone / WhatsApp number (7-15 digits, e.g. +923001234567 or +15550199).',
+        });
+      }
+      if (password.length < 8) {
+        return res.status(400).json({ error: 'A password of at least 8 characters is required.' });
+      }
     }
 
     // 1. Reset any cached state and load the full database schema so all tables (including users) exist first
@@ -297,9 +316,11 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
       const passwordHash = await bcrypt.hash(password, 12);
       await pgClient.query(
         `INSERT INTO users (tenant_id, name, email, phone, password_hash, quick_password, role, status, active)
-         VALUES (1, $1, $2, '', $3, $4, 'SUPERADMIN', 'APPROVED', true)`,
-        [name, email, passwordHash, password]
+         VALUES (1, $1, $2, $3, $4, $5, 'SUPERADMIN', 'APPROVED', true)`,
+        [name, email, phone, passwordHash, password]
       );
+    } else if (phone) {
+      await pgClient.query(`UPDATE users SET phone = $1 WHERE id = $2`, [phone, superadmins.rows[0].id]);
     }
 
     // 4. Record schema initialization markers so control-plane startup knows the schema is ready

@@ -74,7 +74,6 @@ export const AiProductSuggester: React.FC<AiProductSuggesterProps> = ({
   const [appliedBrand, setAppliedBrand] = useState(false);
   const [appliedCategory, setAppliedCategory] = useState(false);
   const [appliedTitle, setAppliedTitle] = useState(false);
-  const [isCreatingBrand, setIsCreatingBrand] = useState(false);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -600,7 +599,7 @@ export const AiProductSuggester: React.FC<AiProductSuggesterProps> = ({
                 type="button"
                 id="btn-apply-all-suggestions"
                 onClick={handleApplyAll}
-                disabled={isCreatingBrand || isCreatingCategory}
+                disabled={isCreatingCategory}
                 className="cursor-pointer inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:from-purple-500 hover:via-indigo-500 hover:to-purple-600 text-white text-xs font-bold shadow-md shadow-indigo-500/25 border border-purple-400/30 transition-all active:scale-95"
               >
                 <CheckCheck className="w-3.5 h-3.5 text-amber-300" />
@@ -695,7 +694,6 @@ export const AiProductSuggester: React.FC<AiProductSuggesterProps> = ({
                 type="button"
                 id="btn-apply-brand"
                 onClick={() => handleApplyBrand()}
-                disabled={isCreatingBrand}
                 className={`cursor-pointer inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
                   appliedBrand
                     ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
@@ -703,7 +701,7 @@ export const AiProductSuggester: React.FC<AiProductSuggesterProps> = ({
                 }`}
               >
                 {appliedBrand ? <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> : null}
-                <span>{appliedBrand ? 'Applied ✓' : isCreatingBrand ? 'Creating...' : 'Apply Brand'}</span>
+                <span>{appliedBrand ? 'Applied ✓' : 'Apply Brand'}</span>
               </button>
             </div>
 

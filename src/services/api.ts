@@ -409,8 +409,10 @@ export const api = {
 
   install: {
     status: () => apiFetch<any>('/install/status'),
-    bootstrap: (data: { name: string; email: string; password: string }) =>
+    bootstrap: (data: { name: string; email: string; password: string; phone?: string; whatsapp?: string }) =>
       apiFetch('/install/bootstrap', { method: 'POST', body: data }),
+    installPlatform: (data: { name: string; email: string; password: string; phone?: string; whatsapp?: string }) =>
+      apiFetch('/install/install-platform', { method: 'POST', body: data }),
     reset: (password: string, email?: string, dropTables?: boolean) =>
       apiFetch('/install/reset', { method: 'POST', body: { password, email, dropTables } }),
     dropTables: (password: string) =>
@@ -807,6 +809,11 @@ export const api = {
       deleteCachedProductOffline(id, getActiveTenantId()).catch(() => {});
       return res;
     },
+  },
+  categories: {
+    getCategories: () => apiFetch('/categories'),
+    createCategory: (name: string) => apiFetch('/categories', { method: 'POST', body: { name } }),
+    deleteCategory: (id: number) => apiFetch(`/categories/${id}`, { method: 'DELETE' }),
   },
   brandCategory: {
     getCategories: () => apiFetch('/categories'),

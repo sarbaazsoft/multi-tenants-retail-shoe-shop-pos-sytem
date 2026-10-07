@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Building2,
   Palette,
+  Check,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
@@ -187,9 +188,55 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
     setInitialProducts((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const validateStep1 = () => {
+    if (!storeName.trim()) {
+      setError('Store name is required.');
+      return false;
+    }
+    if (!ownerName.trim()) {
+      setError('Owner / Admin full name is required.');
+      return false;
+    }
+    if (!ownerEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(ownerEmail.trim())) {
+      setError('A valid owner email address is required.');
+      return false;
+    }
+    if (!alreadyCompleted && (!adminPassword || adminPassword.length < 6)) {
+      setError('Admin password of at least 6 characters is required.');
+      return false;
+    }
+    return true;
+  };
+
+  const validateStep2 = () => {
+    if (enableCashier) {
+      if (!cashierName.trim()) {
+        setError('Cashier name is required when cashier account is enabled.');
+        return false;
+      }
+      if (!cashierEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cashierEmail.trim())) {
+        setError('A valid cashier email address is required when cashier account is enabled.');
+        return false;
+      }
+      if (!cashierPassword || cashierPassword.length < 6) {
+        setError('Cashier password of at least 6 characters is required when cashier account is enabled.');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleFinishOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
     if (alreadyCompleted) return;
+    if (!validateStep1()) {
+      setStep(1);
+      return;
+    }
+    if (!validateStep2()) {
+      setStep(2);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -412,65 +459,83 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                   )}
                 </div>
 
-                {/* 4-Step Interactive Progress Tabs */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mt-5 pt-5 border-t border-slate-200/80 dark:border-purple-900/50">
+                {/* 4-Step Stepper Navigation Aligned with ProductFormModal */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-5 pt-5 border-t border-slate-200/80 dark:border-purple-900/50">
                   {[
                     {
                       num: 1,
-                      title: '1. Store & Admin Account',
-                      subtitle: 'Master Administrator User',
-                      icon: UserCheck,
+                      title: 'Store & Admin Account',
+                      stepLabel: 'Step 1',
                     },
                     {
                       num: 2,
-                      title: '2. Cashier Setup (Optional)',
-                      subtitle: enableCashier ? 'Cashier Configured' : 'Counter Staff or Skip',
-                      icon: Users,
+                      title: 'Cashier Account Setup',
+                      stepLabel: 'Step 2',
                     },
                     {
                       num: 3,
-                      title: '3. Invoices, Taxes & Receipts',
-                      subtitle: 'Prefixes, NTN & Policies',
-                      icon: ReceiptText,
+                      title: 'Invoices, Taxes & Receipts',
+                      stepLabel: 'Step 3',
                     },
                     {
                       num: 4,
-                      title: '4. Branding & Quick Launch',
-                      subtitle: 'PWA Theme & Starter SKUs',
-                      icon: Palette,
+                      title: 'Branding & Quick Launch',
+                      stepLabel: 'Step 4',
                     },
                   ].map((s) => {
-                    const Icon = s.icon;
                     const active = step === s.num;
                     const done = step > s.num;
                     return (
                       <button
                         key={s.num}
                         type="button"
-                        onClick={() => setStep(s.num as 1 | 2 | 3 | 4)}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                        onClick={() => {
+                          if (s.num === 1) {
+                            setError(null);
+                            setStep(1);
+                          } else if (s.num === 2) {
+                            if (validateStep1()) {
+                              setError(null);
+                              setStep(2);
+                            }
+                          } else if (s.num === 3) {
+                            if (validateStep1() && validateStep2()) {
+                              setError(null);
+                              setStep(3);
+                            }
+                          } else if (s.num === 4) {
+                            if (validateStep1() && validateStep2()) {
+                              setError(null);
+                              setStep(4);
+                            }
+                          }
+                        }}
+                        className={`flex items-center gap-1.5 p-2 rounded-xl text-left transition cursor-pointer border ${
                           active
-                            ? 'bg-purple-50/90 dark:bg-purple-950/50 border-purple-500 shadow-sm'
+                            ? 'btn-primary text-white shadow-xs font-semibold border-transparent'
                             : done
-                            ? 'bg-emerald-50/60 dark:bg-emerald-950/25 border-emerald-500/40'
-                            : 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800 opacity-80 hover:opacity-100'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/60'
+                            : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-purple-950/40 dark:text-purple-200 dark:border-purple-800/50'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] font-mono font-bold text-purple-600 dark:text-purple-300">
-                            {done ? 'CONFIGURED' : `STEP 0${s.num}`}
+                        <div
+                          className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                            active
+                              ? 'bg-white text-blue-600 dark:text-purple-700'
+                              : done
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-200 text-slate-600 dark:bg-purple-900/60 dark:text-purple-200'
+                          }`}
+                        >
+                          {done ? <Check className="w-3 h-3 stroke-[3]" /> : s.num}
+                        </div>
+                        <div className="truncate min-w-0">
+                          <span className="block text-[9px] uppercase font-bold tracking-wider opacity-75">
+                            {s.stepLabel}
                           </span>
-                          {done ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                          ) : (
-                            <Icon className="w-4 h-4 text-purple-600 dark:text-purple-300" />
-                          )}
-                        </div>
-                        <div className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
-                          {s.title}
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                          {s.subtitle}
+                          <span className="block text-xs font-semibold truncate">
+                            {s.title}
+                          </span>
                         </div>
                       </button>
                     );
@@ -640,24 +705,40 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                      <button
-                        type="submit"
-                        disabled={saving}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>{saving ? 'Saving...' : 'Save & Launch Portal Now'}</span>
-                      </button>
-
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200/80 dark:border-purple-900/40">
                       <button
                         type="button"
-                        onClick={() => setStep(2)}
-                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                        onClick={onCancel}
+                        className="btn-secondary px-4 py-2.5 text-xs font-semibold cursor-pointer"
                       >
-                        <span>Next: Cashier Account Setup (Optional)</span>
-                        <ArrowRight className="w-4 h-4" />
+                        Cancel Setup
                       </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="btn-secondary px-4 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs font-bold"
+                          title="Save and launch store portal directly"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{saving ? 'Saving...' : 'Save & Launch'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (validateStep1()) {
+                              setError(null);
+                              setStep(2);
+                            }
+                          }}
+                          className="btn-primary px-5 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-sm font-bold"
+                        >
+                          <span>Next: Cashier Account Setup (Optional)</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -826,30 +907,39 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200/80 dark:border-purple-900/40">
                       <button
                         type="button"
-                        onClick={() => setStep(1)}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                        onClick={() => {
+                          setError(null);
+                          setStep(1);
+                        }}
+                        className="btn-secondary px-4 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs font-bold"
                       >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Back to Store &amp; Admin</span>
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Back</span>
                       </button>
 
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-2">
                         <button
                           type="submit"
                           disabled={saving}
-                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+                          className="btn-secondary px-4 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs font-bold"
+                          title="Save and launch store portal directly"
                         >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>{saving ? 'Saving...' : 'Save & Launch Portal Now'}</span>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{saving ? 'Saving...' : 'Save & Launch'}</span>
                         </button>
 
                         <button
                           type="button"
-                          onClick={() => setStep(3)}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                          onClick={() => {
+                            if (validateStep2()) {
+                              setError(null);
+                              setStep(3);
+                            }
+                          }}
+                          className="btn-primary px-5 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-sm font-bold"
                         >
                           <span>Next: Invoices, Taxes &amp; Receipts</span>
-                          <ArrowRight className="w-4 h-4" />
+                          <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -1037,30 +1127,37 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200/80 dark:border-purple-900/40">
                       <button
                         type="button"
-                        onClick={() => setStep(2)}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                        onClick={() => {
+                          setError(null);
+                          setStep(2);
+                        }}
+                        className="btn-secondary px-4 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs font-bold"
                       >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Back to Cashier Setup</span>
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Back</span>
                       </button>
 
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-2">
                         <button
                           type="submit"
                           disabled={saving}
-                          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+                          className="btn-secondary px-4 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs font-bold"
+                          title="Save and launch store portal directly"
                         >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>{saving ? 'Saving...' : 'Complete Setup Now'}</span>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>{saving ? 'Saving...' : 'Save & Launch'}</span>
                         </button>
 
                         <button
                           type="button"
-                          onClick={() => setStep(4)}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                          onClick={() => {
+                            setError(null);
+                            setStep(4);
+                          }}
+                          className="btn-primary px-5 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-sm font-bold"
                         >
                           <span>Next: Branding &amp; Catalog</span>
-                          <ArrowRight className="w-4 h-4" />
+                          <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -1305,25 +1402,35 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200/80 dark:border-purple-900/40">
                       <button
                         type="button"
-                        onClick={() => setStep(3)}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                        onClick={() => {
+                          setError(null);
+                          setStep(3);
+                        }}
+                        className="btn-secondary px-4 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs font-bold"
                       >
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Back to Invoices &amp; Taxes</span>
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Back</span>
                       </button>
 
-                      <button
-                        type="submit"
-                        disabled={saving}
-                        className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold shadow-lg shadow-emerald-600/25 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>
-                          {saving
-                            ? 'Finalizing Store Setup...'
-                            : `Complete Store Setup & Unlock Owner Portal`}
-                        </span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          disabled={saving}
+                          className="btn-primary px-6 py-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-md font-bold disabled:opacity-50"
+                        >
+                          {saving ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>Finalizing Store Setup...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4 stroke-[2.5]" />
+                              <span>Complete Store Setup &amp; Unlock Owner Portal</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
