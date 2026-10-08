@@ -1745,7 +1745,7 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
                             {currentUser?.name || 'Platform SuperAdmin'}
                           </div>
                           <div className="text-xs text-slate-500 dark:text-purple-200/80 truncate leading-tight mt-0.5">
-                            {currentUser?.email || 'superadmin@stepsync.local'}
+                            {currentUser?.email || 'superadmin@sarbaazsoft.com'}
                           </div>
                         </div>
                       </div>

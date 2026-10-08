@@ -37,13 +37,13 @@ let useMock = false;
 
 // In-memory mock store used when DATABASE_URL is not configured or unreachable in AI Studio
 const defaultPasswordHash = bcrypt.hashSync('admin123', 10);
-const defaultStorePasswordHash = bcrypt.hashSync('stepsync@2026', 10);
+const defaultStorePasswordHash = bcrypt.hashSync('baloch@2026', 10);
 
 const mockStore: Record<string, any[]> = {
   tenants: [
     {
       id: 1,
-      name: 'StepSync Footwear',
+      name: 'Baloch Shoes',
       status: 'ACTIVE',
       subscription_plan: 'YEARLY',
       subscription_start_date: new Date(Date.now() - 86400000 * 30).toISOString(),
@@ -66,7 +66,7 @@ const mockStore: Record<string, any[]> = {
       id: 1,
       tenant_id: 0,
       name: 'Platform SuperAdmin',
-      email: 'superadmin@stepsync.com',
+      email: 'superadmin@sarbaazsoft.com',
       phone: '+923000000000',
       avatar_url: '',
       password_hash: defaultPasswordHash,
@@ -80,12 +80,12 @@ const mockStore: Record<string, any[]> = {
     {
       id: 2,
       tenant_id: 1,
-      name: 'StepSync Store Owner',
-      email: 'admin@stepsync.com',
+      name: 'Store Owner',
+      email: 'admin@balochshoes.com',
       phone: '+923001234567',
       avatar_url: '',
       password_hash: defaultStorePasswordHash,
-      quick_password: 'stepsync@2026',
+      quick_password: 'baloch@2026',
       role: 'ADMIN',
       status: 'APPROVED',
       active: true,
@@ -97,11 +97,11 @@ const mockStore: Record<string, any[]> = {
     {
       id: 1,
       tenant_id: 1,
-      name: 'StepSync Footwear',
+      name: 'Baloch Shoes',
       logo: '',
       address: 'Main Boulevard, Retail District',
       phone: '+923001234567',
-      email: 'admin@stepsync.com',
+      email: 'admin@balochshoes.com',
       website: '',
       strn: 'STRN-100200300',
       tax_id: 'STRN-100200300',
@@ -135,9 +135,9 @@ const mockStore: Record<string, any[]> = {
       tenant_id: 1,
       tenant_product_no: 1,
       name: 'Classic Leather Runner',
-      brand: 'StepSync',
+      brand: 'Local',
       category: 'Casual Shoes',
-      sku: 'STP-SF-0001-42',
+      sku: 'BLC-SF-0001-42',
       barcode: '890100000001',
       article: 'SF-0001',
       primary_image_url: '',
@@ -347,7 +347,7 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
         return {
           id: p.id,
           tenant_id: p.tenant_id,
-          store_name: t?.name || 'StepSync Footwear',
+          store_name: t?.name || 'Baloch Shoes',
           currency: cs?.currency || 'PKR',
           product_name: p.article || p.name || 'Shoe Item',
           name: p.name || 'Shoe Item',
@@ -400,7 +400,7 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
 
       return {
         ...t,
-        name: t.name || cs?.name || 'StepSync Footwear',
+        name: t.name || cs?.name || 'Baloch Shoes',
         admin_user_id: owner?.id || null,
         owner_name: owner?.name || 'Store Owner',
         admin_name: owner?.name || 'Store Owner',
@@ -638,7 +638,7 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
   if (upper.startsWith('SELECT') && upper.includes('FROM COMPANY_SETTINGS')) {
     let rows = mockStore.company_settings.map((cs) => ({
       ...cs,
-      name: mockStore.tenants.find((t) => Number(t.id) === Number(cs.tenant_id))?.name || cs.name || 'StepSync Footwear',
+      name: mockStore.tenants.find((t) => Number(t.id) === Number(cs.tenant_id))?.name || cs.name || 'Baloch Shoes',
     }));
     if (params.length > 0 && (upper.includes('TENANT_ID = $1') || upper.includes('COALESCE(TENANT_ID, 1) = $1'))) {
       rows = rows.filter((cs) => Number(cs.tenant_id) === Number(params[0]));
@@ -1006,7 +1006,7 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
     }
     if (upper.includes('AS STOCK_COUNT') && upper.includes('GROUP BY P.BRAND')) {
       const rows = storeProds.map((p) => ({
-        name: p.brand || 'StepSync',
+        name: p.brand || 'Local',
         stock_count: Number(p.total_stock || 0),
       })) as unknown as T[];
       return { rows, rowCount: rows.length };
@@ -1048,7 +1048,7 @@ async function executeMockQuery<T = any>(text: string, params: any[] = []): Prom
           article: String(params[1] || 'SH-01'),
           sku: String(params[2] || `SKU-${Date.now()}`),
           barcode: String(params[3] || `BC-${Date.now()}`),
-          brand: String(params[4] || 'StepSync'),
+          brand: String(params[4] || 'Local'),
           category: String(params[5] || 'Casual Shoes'),
           cost_price: Number(params[6] || 2000),
           min_price: Number(params[7] || 3000),
@@ -1176,7 +1176,7 @@ function createDbInfo(url: string): DbConnectionInfo {
 }
 
 if (!rawDatabaseUrl || (!rawDatabaseUrl.startsWith('postgres://') && !rawDatabaseUrl.startsWith('postgresql://'))) {
-  console.warn('[AI Studio] DATABASE_URL not configured — using in-memory PostgreSQL mock.');
+  console.warn('[Server] DATABASE_URL not configured — using in-memory PostgreSQL mock.');
   useMock = true;
   dbInfo = createDbInfo('');
   dbInfo.connected = true;
@@ -1210,7 +1210,7 @@ if (!rawDatabaseUrl || (!rawDatabaseUrl.startsWith('postgres://') && !rawDatabas
       dbInfo.lastError = msg;
     });
   } catch (err: any) {
-    console.warn('[AI Studio] Failed to initialize pg Pool — falling back to in-memory mock:', err?.message);
+    console.warn('[Server] Failed to initialize pg Pool — falling back to in-memory mock:', err?.message);
     useMock = true;
     dbInfo.connected = true;
   }
@@ -1239,7 +1239,7 @@ async function waitForDatabaseReady(): Promise<void> {
             await new Promise((r) => setTimeout(r, 500));
             continue;
           }
-          console.warn(`[AI Studio] PostgreSQL connection failed (${err?.message || err}) — switching to in-memory mock.`);
+          console.warn(`[Server] PostgreSQL connection failed (${err?.message || err}) — switching to in-memory mock.`);
           useMock = true;
           dbInfo.connected = true;
           dbInfo.lastError = undefined;

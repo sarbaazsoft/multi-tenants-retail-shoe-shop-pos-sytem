@@ -2406,7 +2406,7 @@ router.post('/tenants/onboarding', requireAuth, requireAdmin, async (req: Reques
         const item = initialProducts[i];
         if (!item || !item.name || !String(item.name).trim()) continue;
         const pName = String(item.name).trim();
-        const pBrand = String(item.brand || 'StepSync').trim();
+        const pBrand = String(item.brand || 'Local').trim();
         const pCategory = String(item.category || 'Sneakers').trim();
         const pCost = Math.max(0, Number(item.purchasePrice) || 2000);
         const pMax = Math.max(1, Number(item.maxPrice ?? item.sellingPrice) || 3500);

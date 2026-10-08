@@ -169,14 +169,16 @@ export default function App() {
     companySettings?.company_name ||
     companySettings?.companyName ||
     cachedStoreName ||
-    'StepSync Footwear';
+    '';
 
   const pwaAppName =
     saasMode === 'SUPERADMIN'
       ? 'POS SaaS C-Panel | SarbaazSoft'
       : saasMode === 'LANDING'
-      ? 'SarbaazSoft POS — Multi-Tenant Retail Shoe POS'
-      : `${effectiveStoreName} | SarbaazSoft POS`;
+      ? 'SarbaazSoft POS'
+      : effectiveStoreName
+      ? `${effectiveStoreName} | SarbaazSoft POS`
+      : 'SarbaazSoft POS';
 
   // Dynamically update <link rel="manifest"> and <meta name="theme-color"> per tenant or SuperAdmin PWA
   useEffect(() => {

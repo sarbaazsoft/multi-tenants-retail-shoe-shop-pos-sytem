@@ -198,7 +198,7 @@ export const FinancialSummaryPrintModal: React.FC<FinancialSummaryPrintModalProp
             {/* Footnote */}
             <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-center text-[10.5px] text-slate-400 space-y-1">
               <p>Certified accurate according to active POS database transactions.</p>
-              <p className="font-mono">End of Report • {storeName}</p>
+              <p className="font-mono">End of Report • {storeName} • Powered by SarbaazSoft POS</p>
             </div>
           </div>
         </div>

@@ -173,7 +173,7 @@ export const TenantOnboardingWizard: React.FC<TenantOnboardingWizardProps> = ({
       ...prev,
       {
         name: '',
-        brand: 'StepSync',
+        brand: 'Local',
         category: 'Sneakers',
         size: '42',
         color: 'Black',

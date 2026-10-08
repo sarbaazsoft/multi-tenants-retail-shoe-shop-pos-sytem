@@ -1,11 +1,9 @@
 <div align="center">
-  <img width="1200" height="475" alt="Shoe POS Retail Banner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+  # SarbaazSoft POS
 
-  # Shoe POS Retail Simple
+  **Multi-Tenant Retail Shoe Shop POS & Inventory Management SaaS**
 
-  A modern, web-based Point of Sale (POS) application designed for shoe retail businesses. Built with AI-assisted features and a full-stack JavaScript architecture.
-
-  [View Application in AI Studio](https://ai.studio/apps/dd2a4725-f3a8-493c-ac65-9e4bd05358d6)
+  SarbaazSoft POS is a multi-tenant retail shoe shop POS and inventory management system developed by SarbaazSoft.
 </div>
 
 ---
