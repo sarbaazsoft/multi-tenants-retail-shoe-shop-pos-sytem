@@ -188,9 +188,9 @@ export const SaasLandingPageAlternate: React.FC<Props> = ({ availableTenants, on
     <main className="min-h-screen bg-white text-[#0A1633] font-sans selection:bg-[#0066FF] selection:text-white">
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 shadow-[0_1px_3px_rgba(15,23,42,0.03)] backdrop-blur-md">
         <div className="mx-auto flex h-[76px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <a href="#top" className="flex shrink-0 items-center gap-3" aria-label="ShoePOS home">
+          <a href="#top" className="flex shrink-0 items-center gap-3" aria-label="SarbaazSoft POS home">
             <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#0066FF] text-white"><Store className="h-6 w-6" /></span>
-            <span><span className="block text-2xl font-extrabold leading-none"><span>Shoe</span><span className="text-[#0066FF]">POS</span></span><span className="mt-1 block text-[11px] font-medium text-slate-500">Retail Shoe Shop System</span></span>
+            <span><span className="block text-2xl font-extrabold leading-none"><span>SarbaazSoft </span><span className="text-[#0066FF]">POS</span></span><span className="mt-1 block text-[11px] font-medium text-slate-500">Multi-Tenant Retail Shoe Shop SaaS</span></span>
           </a>
           <nav className="hidden items-center gap-1 text-sm font-medium md:flex" aria-label="Main navigation">
             {[['Home', 'top'], ['Features', 'features'], ['Stores', 'stores'], ['Pricing', 'pricing'], ['About', 'about']].map(([label, id]) => <button key={id} onClick={() => goTo(id)} className="rounded-lg px-3 py-2 text-slate-600 transition hover:text-[#0066FF]">{label}</button>)}

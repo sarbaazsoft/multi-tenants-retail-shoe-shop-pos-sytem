@@ -91,6 +91,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onUserUpdated,
   storeName,
 }) => {
+  const roleUpper = String(currentUser?.role || '').toUpperCase();
+  const isSuperAdmin = roleUpper === 'SUPERADMIN';
+  const isAdmin = roleUpper === 'ADMIN';
+
   const [activeTab, setActiveTab] = useState<'profile' | 'password'>('profile');
   const { containerRef: profileTabContainerRef } = useScrollActiveTab<HTMLDivElement>(activeTab, {
     padding: 16,
@@ -289,22 +293,24 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">My Account &amp; Profile</h3>
                 <span
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                    currentUser?.role === 'SUPERADMIN'
+                    isSuperAdmin
                       ? 'bg-purple-600/20 text-purple-700 dark:text-purple-300 border border-purple-500/40 dark:border-purple-400/50'
-                      : currentUser?.role === 'ADMIN'
+                      : isAdmin
                       ? 'bg-blue-500/15 text-blue-700 dark:text-purple-200 border border-blue-500/30 dark:border-purple-400/40 dark:bg-purple-500/20'
                       : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700'
                   }`}
                 >
-                  {currentUser?.role === 'SUPERADMIN'
-                    ? 'SuperAdmin'
-                    : currentUser?.role === 'ADMIN'
+                  {isSuperAdmin
+                    ? 'Platform Owner / SuperAdmin'
+                    : isAdmin
                     ? 'Store Owner'
                     : 'Salesperson'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-purple-200/80 mt-0.5">
-                Manage your staff photo, display name, phone, and security credentials
+                {isSuperAdmin
+                  ? 'Manage your platform photo, display name, phone, and security credentials'
+                  : 'Manage your staff photo, display name, phone, and security credentials'}
               </p>
             </div>
           </div>
@@ -568,18 +574,24 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-950/60 border border-slate-300 dark:border-slate-700/80 rounded-xl text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-600 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 outline-none transition"
                 />
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                  Used for staff contact, shift management, and counter accountability.
+                  {isSuperAdmin
+                    ? 'Used for platform administration, notifications, and emergency recovery contact.'
+                    : 'Used for staff contact, shift management, and counter accountability.'}
                 </p>
               </div>
 
               {/* Role & Status (Display Only) */}
               <div className="p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-[#1A263D] flex items-center justify-between text-xs">
                 <div className="flex items-center space-x-2">
-                  <Shield className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <Shield className={`w-4 h-4 ${isSuperAdmin ? 'text-purple-600 dark:text-purple-400' : 'text-slate-500 dark:text-slate-400'}`} />
                   <span className="text-slate-600 dark:text-slate-300 font-medium">Assigned Role:</span>
                 </div>
-                <span className="font-bold text-slate-800 dark:text-slate-100">
-                  {currentUser?.role === 'ADMIN' ? 'Owner / Administrator' : 'Sales Person / Cashier'}
+                <span className={`font-bold ${isSuperAdmin ? 'text-purple-700 dark:text-purple-300' : 'text-slate-800 dark:text-slate-100'}`}>
+                  {isSuperAdmin
+                    ? 'Platform Owner / SuperAdmin'
+                    : isAdmin
+                    ? 'Owner / Administrator'
+                    : 'Sales Person / Cashier'}
                 </span>
               </div>
 

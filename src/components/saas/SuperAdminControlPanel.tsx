@@ -50,6 +50,8 @@ import {
   Layers,
   Receipt,
   ChevronDown,
+  UserCog,
+  ShieldCheck,
 } from 'lucide-react';
 import { api, setAuthSession } from '../../services/api';
 import { ShowroomBackground } from '../common/ShowroomBackground';
@@ -57,6 +59,7 @@ import { PublicHeader } from '../common/PublicHeader';
 import { PublicFooter } from '../common/PublicFooter';
 import { UserAvatar } from '../common/UserAvatar';
 import { ThemeDropdown } from '../common/ThemeDropdown';
+import { UserProfileModal } from '../auth/UserProfileModal';
 import { StatCard, triggerStatRecount } from '../common/StatCard';
 import {
   RetailShoeMetrics,
@@ -83,6 +86,7 @@ interface SuperAdminControlPanelProps {
   onOpenStore: (tenantId: number) => void;
   onOpenOnboarding: (tenantId: number) => void;
   onTenantsUpdated: () => void;
+  onOpenProfile?: () => void;
 }
 
 type SuperAdminTab = 'dashboard' | 'stores' | 'requests' | 'reports' | 'manifests';
@@ -94,9 +98,33 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
   onOpenStore,
   onOpenOnboarding,
   onTenantsUpdated,
+  onOpenProfile,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const isSuperAdmin = currentUser?.role === 'SUPERADMIN';
+
+  // SuperAdmin user menu dropdown & profile modal states
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleOpenProfile = () => {
+    if (onOpenProfile) {
+      onOpenProfile();
+    } else {
+      setIsProfileModalOpen(true);
+    }
+  };
 
   // Login / Reset form state when not authenticated as SUPERADMIN
   const [authTab, setAuthTab] = useState<'login' | 'forgot' | 'reset'>('login');
@@ -1401,8 +1429,11 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
           }`}
         >
           {/* User Card */}
-          <div
-            className={`flex items-center rounded-xl bg-white/80 dark:bg-[#131B2E] border border-indigo-500/20 transition shadow-xs ${
+          <button
+            type="button"
+            onClick={handleOpenProfile}
+            title="Edit SuperAdmin Profile & Security"
+            className={`w-full flex items-center rounded-xl bg-white/80 hover:bg-white dark:bg-[#131B2E] dark:hover:bg-[#1A263D] border border-indigo-500/20 hover:border-purple-500/40 transition shadow-xs cursor-pointer text-left ${
               collapsed ? 'justify-center p-2 relative' : 'justify-between p-2'
             }`}
           >
@@ -1429,11 +1460,11 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
             </div>
 
             {!collapsed && (
-              <div className="text-emerald-500 dark:text-emerald-400">
-                <Check className="w-4 h-4" />
+              <div className="text-slate-400 hover:text-purple-600 dark:text-slate-500 dark:hover:text-purple-300 transition-colors">
+                <UserCog className="w-3.5 h-3.5" />
               </div>
             )}
-          </div>
+          </button>
 
           {/* Dedicated SuperAdmin PWA Badge */}
           <div
@@ -1658,32 +1689,116 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
 
             <ThemeDropdown />
 
-            <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-indigo-500/20">
-              <UserAvatar
-                name={currentUser?.name || 'Platform SuperAdmin'}
-                avatarUrl={currentUser?.avatarUrl}
-                role="ADMIN"
-                size="sm"
-              />
-              <div className="hidden xl:block text-left">
-                <div className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
+            {/* User Avatar + Name + Dropdown Chevron (Aligned with store user identification dropdown) */}
+            <div ref={userMenuRef} className="relative">
+              <button
+                id="superadmin-user-menu-trigger"
+                type="button"
+                onClick={() => setShowUserDropdown((prev) => !prev)}
+                className={`h-8 sm:h-8.5 flex items-center gap-2 px-2.5 sm:px-3 py-1 rounded-lg transition-all duration-200 cursor-pointer border text-xs ${
+                  showUserDropdown
+                    ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 text-white border-purple-400/50 ring-2 ring-purple-400/50 shadow-md shadow-purple-600/25 dark:shadow-[0_0_16px_rgba(147,51,234,0.4)]'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:text-purple-200 dark:hover:text-white dark:bg-purple-500/20 dark:hover:bg-purple-500/30 dark:border-purple-400/40 dark:shadow-[0_0_14px_rgba(147,51,234,0.2)]'
+                }`}
+                aria-label="SuperAdmin User menu"
+                aria-expanded={showUserDropdown}
+                aria-haspopup="true"
+              >
+                <UserIcon className="w-3.5 h-3.5 stroke-[2] shrink-0 text-current opacity-90" />
+                <span
+                  className={`hidden sm:inline-block text-xs font-bold max-w-[130px] truncate ${
+                    showUserDropdown ? 'text-white' : 'text-slate-800 dark:text-purple-200'
+                  }`}
+                >
                   {currentUser?.name || 'SuperAdmin'}
-                </div>
-                <div className="text-[10px] font-mono text-purple-600 dark:text-purple-300 font-semibold">
-                  SUPERADMIN
-                </div>
-              </div>
-            </div>
+                </span>
+                <ChevronDown
+                  className={`w-3 h-3 transition-transform duration-200 ease-out opacity-75 ${
+                    showUserDropdown ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
 
-            <button
-              type="button"
-              onClick={onLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-200/80 dark:border-rose-500/30 text-xs font-bold transition cursor-pointer"
-              title="Sign Out of SuperAdmin C-Panel"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sign Out</span>
-            </button>
+              {/* User Profile Dropdown Menu */}
+              <AnimatePresence>
+                {showUserDropdown && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.94, y: -8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.94, y: -8 }}
+                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                    style={{ transformOrigin: 'top right' }}
+                    className="absolute right-0 left-auto top-full mt-2 w-68 sm:w-76 bg-white dark:bg-[#120726] border border-slate-200 dark:border-purple-400/40 rounded-xl shadow-2xl dark:shadow-[0_0_25px_rgba(147,51,234,0.25)] p-2.5 z-50 backdrop-blur-md space-y-1.5"
+                  >
+                    {/* Unified Identity & Role Card */}
+                    <div className="p-2.5 rounded-lg bg-slate-50/80 dark:bg-gradient-to-r dark:from-purple-900 dark:via-indigo-950 dark:to-slate-900 border border-slate-100 dark:border-purple-800/80 dark:text-white transition-colors mb-0.5 space-y-2">
+                      <div className="flex items-center gap-3">
+                        <UserAvatar
+                          name={currentUser?.name || 'SuperAdmin'}
+                          avatarUrl={currentUser?.avatarUrl}
+                          role="SUPERADMIN"
+                          size="lg"
+                          className="shrink-0 rounded-full ring-2 ring-purple-500/40 shadow-md"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate leading-tight">
+                            {currentUser?.name || 'Platform SuperAdmin'}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-purple-200/80 truncate leading-tight mt-0.5">
+                            {currentUser?.email || 'superadmin@stepsync.local'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Role Card */}
+                      <div className="p-2 rounded-lg bg-purple-50/90 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-500/30 text-purple-900 dark:text-purple-200 space-y-1.5 dark:shadow-[0_0_10px_rgba(147,51,234,0.15)] backdrop-blur-xs">
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <ShieldCheck className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                            <span className="text-[10px] font-bold tracking-wide uppercase truncate">
+                              Role: SuperAdmin
+                            </span>
+                          </div>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-bold bg-purple-600 text-white dark:bg-purple-400 dark:text-purple-950 uppercase tracking-wider shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-white dark:bg-purple-950 animate-pulse" />
+                            Root Access
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Profile & Security Item */}
+                    <button
+                      type="button"
+                      id="superadmin-profile-security-btn"
+                      onClick={() => {
+                        setShowUserDropdown(false);
+                        handleOpenProfile();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition cursor-pointer text-slate-700 dark:text-purple-200 hover:bg-gradient-to-r hover:from-purple-600 hover:via-indigo-600 hover:to-purple-700 hover:text-white dark:hover:text-white dark:hover:bg-purple-500/25 group border border-transparent"
+                    >
+                      <UserCog className="w-3.5 h-3.5 stroke-[2] transition-colors shrink-0 text-current opacity-80 group-hover:opacity-100" />
+                      <span className="truncate text-xs font-semibold">Profile &amp; Security</span>
+                    </button>
+
+                    {/* Sign Out Item */}
+                    <div className="pt-1 mt-1 border-t border-slate-100 dark:border-purple-800/60">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUserDropdown(false);
+                          onLogout();
+                        }}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition cursor-pointer text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 group border border-transparent"
+                      >
+                        <LogOut className="w-3.5 h-3.5 stroke-[2] shrink-0 text-current" />
+                        <span className="truncate text-xs font-semibold">Sign Out</span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 
@@ -3746,16 +3861,22 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
 
         {/* FOOTER (Aligned with Store Page Footer) */}
         <footer className="px-4 py-2.5 border-t border-indigo-500/20 bg-white/95 dark:bg-white/5 backdrop-blur-lg shadow-lg transition-colors duration-500 text-center text-xs font-medium text-slate-800 dark:text-slate-100 tracking-wide shrink-0 no-print select-none">
-          Designed &amp; Developed by{' '}
-          <a
-            href="https://portpolio-eight-pi.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-bold text-slate-900 dark:text-white hover:text-indigo-500 dark:hover:text-indigo-300 hover:underline transition-colors"
-          >
-            SarbaazSoft
-          </a>{' '}
-          © 2026 • Platform SuperAdmin Control Plane
+          <span className="font-bold text-slate-900 dark:text-white">SarbaazSoft POS</span>
+          <span className="mx-1.5 text-slate-400 dark:text-slate-500">&bull;</span>
+          <span>Platform SuperAdmin Control Plane</span>
+          <span className="mx-1.5 text-slate-400 dark:text-slate-500">&bull;</span>
+          <span>
+            &copy; 2026{' '}
+            <a
+              href="https://portpolio-eight-pi.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-slate-900 dark:text-white hover:text-indigo-500 dark:hover:text-indigo-300 hover:underline transition-colors"
+            >
+              SarbaazSoft
+            </a>
+            . All rights reserved.
+          </span>
         </footer>
       </div>
 
@@ -4490,6 +4611,21 @@ export const SuperAdminControlPanel: React.FC<SuperAdminControlPanelProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+      {/* SuperAdmin Profile & Security Modal */}
+      {isProfileModalOpen && (
+        <UserProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          currentUser={currentUser}
+          onUserUpdated={(updated) => {
+            onUserAuthenticated(updated, '');
+            try {
+              localStorage.setItem('pos_current_user', JSON.stringify(updated));
+            } catch {}
+          }}
+          storeName="Platform SuperAdmin"
+        />
+      )}
     </div>
   );
 };

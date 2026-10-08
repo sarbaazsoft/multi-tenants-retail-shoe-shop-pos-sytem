@@ -20,7 +20,7 @@ export interface SendResetEmailResult {
 let cachedEtherealAccount: { user: string; pass: string; smtp: { host: string; port: number; secure: boolean } } | null = null;
 
 function buildResetEmailHtml(opts: SendResetEmailOptions): string {
-  const displayStore = opts.storeName || 'StepSync Footwear POS';
+  const displayStore = opts.storeName || 'SarbaazSoft POS';
   const displayName = opts.userName || opts.to;
   const shortCode = opts.resetToken.toUpperCase();
 
@@ -91,7 +91,7 @@ function buildResetEmailHtml(opts: SendResetEmailOptions): string {
 }
 
 function buildResetEmailText(opts: SendResetEmailOptions): string {
-  const displayStore = opts.storeName || 'StepSync Footwear POS';
+  const displayStore = opts.storeName || 'SarbaazSoft POS';
   return [
     `${displayStore} — Password Reset Request`,
     ``,
@@ -113,8 +113,8 @@ export async function sendPasswordResetEmail(
   opts: SendResetEmailOptions
 ): Promise<SendResetEmailResult> {
   const configuredFrom = (process.env.SMTP_FROM || process.env.SMTP_USER || process.env.GMAIL_USER || '').trim();
-  const fromAddress = configuredFrom || '"ShoePOS Security" <no-reply@shoepos.com>';
-  const subject = `Password Reset Token & Link — ${opts.storeName || 'ShoePOS Terminal'}`;
+  const fromAddress = configuredFrom || '"SarbaazSoft POS Security" <no-reply@sarbaazsoft.com>';
+  const subject = `Password Reset Token & Link — ${opts.storeName || 'SarbaazSoft POS'}`;
   const html = buildResetEmailHtml(opts);
   const text = buildResetEmailText(opts);
 
@@ -170,7 +170,7 @@ export async function sendPasswordResetEmail(
       !/@(gmail|yahoo|hotmail|outlook|ethereal)\./i.test(customResendFrom);
     const resendFrom = isCustomDomainFrom
       ? customResendFrom
-      : 'ShoePOS Security <onboarding@resend.dev>';
+      : 'SarbaazSoft POS Security <onboarding@resend.dev>';
 
     try {
       const resp = await fetch('https://api.resend.com/emails', {
@@ -301,7 +301,7 @@ export async function sendPasswordResetEmail(
     });
 
     const info = await testTransporter.sendMail({
-      from: '"ShoePOS Security" <no-reply@shoepos.com>',
+      from: '"SarbaazSoft POS Security" <no-reply@sarbaazsoft.com>',
       to: opts.to,
       subject,
       text,

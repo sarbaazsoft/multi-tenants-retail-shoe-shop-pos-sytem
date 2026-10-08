@@ -253,11 +253,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-purple-600/30 dark:shadow-[0_0_14px_rgba(147,51,234,0.35)] border border-purple-400/40 dark:border-purple-400/50">
                   <Store className="w-6 h-6" />
                 </div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-1">
+                  SarbaazSoft POS
+                </div>
                 <h2 id="auth-store-name" className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                   {storeName}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-purple-200/80 mt-1 font-medium">
-                  Authorized Personnel Counter Terminal &bull; POS Access
+                  Sign in to continue to store terminal
                 </p>
                 {activeTenantId && (
                   <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-50 dark:bg-purple-950/60 border border-purple-200/80 dark:border-purple-800/70 text-[11px] font-mono font-bold text-purple-700 dark:text-purple-300">

@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { PublicFooter } from '../common/PublicFooter';
 import { toTitleCaseLive, toTitleCaseTrimmed, toLowerTrimmed } from '../../utils/textFormat';
 import type { TenantInfo } from '../../types';
 import shoeStoreBg from '../../assets/images/shoe_store_blurred_bg_1790706924465.jpg';
@@ -508,12 +509,12 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
               </svg>
             </div>
             <div>
-              <div className="text-2xl font-extrabold tracking-tight leading-none">
-                <span className="text-[#0A1633]">Shoe</span>
+              <div className="text-xl sm:text-2xl font-extrabold tracking-tight leading-none">
+                <span className="text-[#0A1633]">SarbaazSoft </span>
                 <span className="text-[#0066FF]">POS</span>
               </div>
               <div className="text-[11px] font-medium text-slate-500 mt-0.5">
-                Retail Shoe Shop System
+                Multi-Tenant Retail Shoe Shop SaaS
               </div>
             </div>
           </button>
@@ -684,8 +685,8 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
       <section ref={statsSectionRef} className="bg-[#F3F7FF] py-12 sm:py-14 text-[#0A1633]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8">
-            <div className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#0066FF]">ShoePOS in numbers</div>
-            <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight">Real activity from shops using ShoePOS</h2>
+            <div className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#0066FF]">SarbaazSoft POS in numbers</div>
+            <h2 className="mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight">Real activity from shops using SarbaazSoft POS</h2>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             {[
@@ -730,7 +731,7 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
               </h2>
 
               <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
-                From sales to inventory, suppliers to reports — ShoePOS helps you manage your complete retail business in one powerful platform.
+                From sales to inventory, suppliers to reports — SarbaazSoft POS helps you manage your complete retail business in one powerful platform.
               </p>
 
               {/* 3 Miniature Feature Preview Cards */}
@@ -739,7 +740,7 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
                 <div className="text-center">
                   <div className="h-28 rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between p-2 text-left">
                     <div className="bg-[#0B1938] text-white text-[7px] font-bold px-1.5 py-0.5 rounded flex items-center justify-between">
-                      <span>ShoePOS</span>
+                      <span>SarbaazSoft</span>
                       <span className="text-blue-300">KPIs</span>
                     </div>
                     <div className="grid grid-cols-2 gap-1 my-1">
@@ -853,10 +854,10 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
             <div>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0A1633] tracking-tight">
-                Shops using ShoePOS
+                Shops using SarbaazSoft POS
               </h2>
               <p className="text-sm text-slate-600 mt-1">
-                Browse the shops currently set up on ShoePOS.
+                Browse the retail stores currently powered by SarbaazSoft POS.
               </p>
             </div>
           </div>
@@ -1074,6 +1075,11 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
           </button>
         </div>
       </section>
+
+      {/* Global Application Footer */}
+      <PublicFooter
+        subtitle="Multi-Tenant Retail Shoe Shop POS & Inventory Management SaaS"
+      />
 
       {/* MODAL 1: GET STARTED / STORE SUBSCRIPTION REQUEST (Aligned with ProductFormModal Header, Cards & Footer) */}
       {showRequestModal && (

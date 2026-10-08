@@ -1012,7 +1012,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
       {/* FOOTER */}
       <footer className="pt-6 pb-2 text-center text-xs text-slate-400 dark:text-slate-500 transition-colors">
-        Designed &amp; Developed by <span className="font-semibold text-slate-600 dark:text-slate-300">SarbaazSoft</span> &copy; 2026
+        Powered by <span className="font-semibold text-slate-600 dark:text-slate-300">SarbaazSoft POS</span> &bull; &copy; 2026 <span className="font-semibold text-slate-600 dark:text-slate-300">SarbaazSoft</span>. All rights reserved.
       </footer>
     </div>
   );

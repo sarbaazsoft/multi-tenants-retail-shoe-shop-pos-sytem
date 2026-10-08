@@ -27,7 +27,7 @@ type PlatformTab = 'android' | 'apple' | 'desktop';
 export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClose, storeName }) => {
   const { isInstallable, isInstalled, isIOS, isAndroid, install } = usePWAInstall();
   const [activeTab, setActiveTab] = useState<PlatformTab>('android');
-  const effectiveStoreName = storeName || localStorage.getItem('cached_store_name') || 'StepSync POS';
+  const effectiveStoreName = storeName || localStorage.getItem('cached_store_name') || 'SarbaazSoft POS';
   const pwaAppName = effectiveStoreName;
 
   const { containerRef: installTabContainerRef } = useScrollActiveTab<HTMLDivElement>(activeTab, {
@@ -218,14 +218,14 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
                   Direct Android Package (.APK)
                 </span>
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 font-semibold">
-                  StepSync-POS.apk (12 KB)
+                  SarbaazSoft-POS.apk (12 KB)
                 </span>
               </div>
 
               {/* Direct A tag download button - bypasses any browser synthetic click blockers */}
               <a
-                href="/assets/StepSync-POS.apk"
-                download="StepSync-POS.apk"
+                href="/assets/SarbaazSoft-POS.apk"
+                download="SarbaazSoft-POS.apk"
                 onClick={() => {
                   setDownloadingApk(true);
                   setTimeout(() => {
@@ -241,7 +241,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
                 ) : downloadApkSuccess ? (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>Downloaded: StepSync-POS.apk</span>
+                    <span>Downloaded: SarbaazSoft-POS.apk</span>
                   </>
                 ) : (
                   <>
@@ -254,11 +254,11 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
               <div className="flex items-center justify-between text-[10.5px] text-slate-500 dark:text-slate-400 pt-0.5">
                 <span className="flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  Asset file: <code>/assets/StepSync-POS.apk</code>
+                  Asset file: <code>/assets/SarbaazSoft-POS.apk</code>
                 </span>
                 <a
-                  href="/assets/StepSync-POS.apk"
-                  download="StepSync-POS.apk"
+                  href="/assets/SarbaazSoft-POS.apk"
+                  download="SarbaazSoft-POS.apk"
                   className="text-emerald-600 dark:text-emerald-400 hover:underline font-semibold"
                 >
                   Direct File Mirror
@@ -305,7 +305,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
                   Tap the green <strong className="text-slate-800 dark:text-slate-200">"Download Android APK (.apk)"</strong> button above.
                 </li>
                 <li className="leading-relaxed">
-                  When the download finishes, open your notification shade or <strong className="text-slate-800 dark:text-slate-200">Downloads</strong> folder and tap <strong className="text-slate-800 dark:text-slate-200">StepSync-POS.apk</strong>.
+                  When the download finishes, open your notification shade or <strong className="text-slate-800 dark:text-slate-200">Downloads</strong> folder and tap <strong className="text-slate-800 dark:text-slate-200">SarbaazSoft-POS.apk</strong>.
                 </li>
                 <li className="leading-relaxed">
                   If prompted with <em>"Install unknown apps"</em>, tap <strong className="text-slate-800 dark:text-slate-200">Settings</strong> and toggle <strong className="text-slate-800 dark:text-slate-200">"Allow from this source"</strong>.
@@ -448,8 +448,8 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
               </p>
 
               <a
-                href="/assets/StepSync-POS-Desktop-Setup.exe"
-                download="StepSync-POS-Desktop-Setup.exe"
+                href="/assets/SarbaazSoft-POS-Desktop-Setup.exe"
+                download="SarbaazSoft-POS-Desktop-Setup.exe"
                 onClick={() => {
                   setDownloadingExe(true);
                   setTimeout(() => {
@@ -465,7 +465,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
                 ) : downloadSuccess ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-400 dark:text-emerald-600" />
-                    <span>Downloaded: StepSync-POS-Desktop-Setup.exe</span>
+                    <span>Downloaded: SarbaazSoft-POS-Desktop-Setup.exe</span>
                   </>
                 ) : (
                   <>
@@ -478,11 +478,11 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
               <div className="flex items-center justify-between text-[10.5px] text-slate-500 dark:text-slate-400 pt-0.5">
                 <span className="flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  Asset: <code>/assets/StepSync-POS-Desktop-Setup.exe</code>
+                  Asset: <code>/assets/SarbaazSoft-POS-Desktop-Setup.exe</code>
                 </span>
                 <a
-                  href="/assets/StepSync-POS-Desktop-Setup.exe"
-                  download="StepSync-POS-Desktop-Setup.exe"
+                  href="/assets/SarbaazSoft-POS-Desktop-Setup.exe"
+                  download="SarbaazSoft-POS-Desktop-Setup.exe"
                   className="text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
                 >
                   Direct Mirror

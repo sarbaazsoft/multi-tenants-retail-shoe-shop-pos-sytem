@@ -101,7 +101,7 @@ const DATABASE_TABLE_DDL: string[] = [
   )`,
   `CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
-    tenant_id INTEGER NOT NULL DEFAULT 1,
+    tenant_id INTEGER NOT NULL DEFAULT 0,
     name TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL UNIQUE,
     phone TEXT DEFAULT '',
@@ -464,6 +464,18 @@ export async function ensureDatabaseSchema(): Promise<void> {
           END;
           BEGIN
             ALTER TABLE categories DROP COLUMN IF EXISTS tenant_id CASCADE;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            ALTER TABLE users ALTER COLUMN tenant_id SET DEFAULT 0;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            UPDATE users SET tenant_id = 0 WHERE UPPER(COALESCE(role, '')) = 'SUPERADMIN' AND tenant_id != 0;
+          EXCEPTION WHEN OTHERS THEN NULL;
+          END;
+          BEGIN
+            UPDATE password_reset_tokens SET tenant_id = 0 WHERE user_id IN (SELECT id FROM users WHERE UPPER(COALESCE(role, '')) = 'SUPERADMIN');
           EXCEPTION WHEN OTHERS THEN NULL;
           END;
         END $$;
@@ -872,7 +884,8 @@ export async function ensureSaasControlPlane(): Promise<void> {
       if (!saRow.password_hash) {
         await pgClient.query(
           `UPDATE users
-           SET password_hash = $1,
+           SET tenant_id = 0,
+               password_hash = $1,
                quick_password = 'superadmin123',
                status = 'APPROVED',
                active = true,
@@ -883,7 +896,8 @@ export async function ensureSaasControlPlane(): Promise<void> {
       } else {
         await pgClient.query(
           `UPDATE users
-           SET status = 'APPROVED',
+           SET tenant_id = 0,
+               status = 'APPROVED',
                active = true,
                updated_at = NOW()
            WHERE UPPER(COALESCE(role, '')) = 'SUPERADMIN'`
@@ -899,7 +913,7 @@ export async function ensureSaasControlPlane(): Promise<void> {
       await pgClient
         .query(
           `INSERT INTO users (tenant_id, name, email, phone, password_hash, quick_password, role, status, active)
-           VALUES (1, 'Platform SuperAdmin', $1, '+92-300-0000001', $2, 'superadmin123', 'SUPERADMIN', 'APPROVED', true)
+           VALUES (0, 'Platform SuperAdmin', $1, '+92-300-0000001', $2, 'superadmin123', 'SUPERADMIN', 'APPROVED', true)
            ON CONFLICT (email) DO NOTHING`,
           [saEmail, superAdminHash]
         )

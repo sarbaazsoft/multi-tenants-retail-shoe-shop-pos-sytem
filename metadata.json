@@ -1,6 +1,6 @@
 {
-  "name": "Shoe-POS-Retail-Simple",
-  "description": "Retail Shoe POS & Inventory terminal with PWA support, desktop launcher, barcode scanning, and multi-user management",
+  "name": "sarbaazsoft-pos",
+  "description": "SarbaazSoft POS is a multi-tenant retail shoe shop POS and inventory management system.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

@@ -173,10 +173,10 @@ export default function App() {
 
   const pwaAppName =
     saasMode === 'SUPERADMIN'
-      ? 'POS SaaS C-Panel'
+      ? 'POS SaaS C-Panel | SarbaazSoft'
       : saasMode === 'LANDING'
-      ? 'Multi-Tenant Retail POS Cloud'
-      : `${effectiveStoreName} — POS Terminal`;
+      ? 'SarbaazSoft POS — Multi-Tenant Retail Shoe POS'
+      : `${effectiveStoreName} | SarbaazSoft POS`;
 
   // Dynamically update <link rel="manifest"> and <meta name="theme-color"> per tenant or SuperAdmin PWA
   useEffect(() => {
@@ -745,16 +745,16 @@ export default function App() {
       {saasMode === 'LANDING' && (
         isInitializing ? (
           <PublicLayout
-            storeName={tenantIdParam ? effectiveStoreName : 'ShoePOS Platform'}
+            storeName={tenantIdParam ? effectiveStoreName : 'SarbaazSoft POS'}
             badgeText="Connecting..."
             badgeVariant="connecting"
-            subtitle={tenantIdParam ? 'Preparing your workspace' : 'Loading platform workspace'}
+            subtitle={tenantIdParam ? 'Preparing your store workspace' : 'Multi-tenant retail shoe shop POS'}
             dbText="Secure tenant sign-in"
           >
             <div className="bg-white/95 dark:bg-[#131B2E]/95 rounded-3xl p-8 shadow-2xl border border-white/30 dark:border-purple-800/60 flex flex-col items-center max-w-sm w-full mx-4 text-center">
               <div className="w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin" />
               <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-4">
-                {tenantIdParam ? 'Loading your store...' : 'Loading platform...'}
+                {tenantIdParam ? 'Loading your store...' : 'Loading SarbaazSoft POS...'}
               </p>
             </div>
           </PublicLayout>
@@ -762,7 +762,7 @@ export default function App() {
           <AuthModal
             companySettings={storeLoginTarget
               ? { ...storeLoginTarget, tenant_id: storeLoginTarget.id, name: storeLoginTarget.name }
-              : { name: 'ShoePOS Store Portal' }}
+              : { name: 'SarbaazSoft POS' }}
             onBack={() => setGlobalLoginOpen(false)}
             onSuccess={(user) => {
               const role = String(user?.role || '').toUpperCase();
@@ -832,6 +832,7 @@ export default function App() {
             onOpenStore={(tenantId) => handleNavigateDomain({ mode: 'TENANT', tenantId })}
             onOpenOnboarding={(tenantId) => handleNavigateDomain({ mode: 'ONBOARDING', tenantId })}
             onTenantsUpdated={() => refreshTenantDirectory('SUPERADMIN')}
+            onOpenProfile={() => setIsProfileModalOpen(true)}
           />
         )
       )}
@@ -916,7 +917,7 @@ export default function App() {
               storeName={effectiveStoreName}
               badgeText="Connecting..."
               badgeVariant="connecting"
-              subtitle="Footwear Retail POS & Inventory Suite"
+              subtitle="Powered by SarbaazSoft POS"
               dbText="PostgreSQL • Tenant Scoped"
             >
               <div
@@ -939,7 +940,7 @@ export default function App() {
               storeName={effectiveStoreName}
               badgeText="Store sign-in"
               badgeVariant="connecting"
-              subtitle="Opening shared store sign-in..."
+              subtitle="Powered by SarbaazSoft POS"
               dbText="Tenant Scoped"
             >
               <div className="bg-white/95 dark:bg-[#131B2E]/95 rounded-3xl p-8 shadow-2xl border border-white/30 dark:border-purple-800/60 flex flex-col items-center max-w-sm w-full mx-4 text-center">
@@ -1148,16 +1149,22 @@ export default function App() {
                 </main>
 
                 <footer className="px-4 py-2.5 border border-indigo-500/20 bg-white/95 dark:bg-white/10 backdrop-blur-lg shadow-lg transition-colors duration-500 text-center text-xs font-medium text-slate-800 dark:text-slate-100 tracking-wide shrink-0 no-print select-none">
-                  Designed &amp; Developed by{' '}
-                  <a
-                    href="https://portpolio-eight-pi.vercel.app/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-bold text-slate-900 dark:text-white hover:text-indigo-500 dark:hover:text-indigo-300 hover:underline transition-colors"
-                  >
-                    SarbaazSoft
-                  </a>{' '}
-                  © 2026 • {effectiveStoreName}
+                  <span className="font-bold text-slate-900 dark:text-white">{effectiveStoreName}</span>
+                  <span className="mx-1.5 text-slate-400 dark:text-slate-500">&bull;</span>
+                  <span>Powered by <span className="font-semibold text-slate-900 dark:text-white">SarbaazSoft POS</span></span>
+                  <span className="mx-1.5 text-slate-400 dark:text-slate-500">&bull;</span>
+                  <span>
+                    &copy; 2026{' '}
+                    <a
+                      href="https://portpolio-eight-pi.vercel.app/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-bold text-slate-900 dark:text-white hover:text-indigo-500 dark:hover:text-indigo-300 hover:underline transition-colors"
+                    >
+                      SarbaazSoft
+                    </a>
+                    . All rights reserved.
+                  </span>
                 </footer>
               </div>
             </div>

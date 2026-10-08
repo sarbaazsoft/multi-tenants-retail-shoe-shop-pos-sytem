@@ -47,8 +47,9 @@ export function generateToken(user: {
   role: 'SUPERADMIN' | 'ADMIN' | 'CASHIER' | string;
   status: 'PENDING' | 'APPROVED' | string;
 }): string {
-  const tenantId = Number(user.tenantId) > 0 ? Number(user.tenantId) : 1;
   const role = (user.role || 'CASHIER').toUpperCase();
+  const isSuperAdmin = role === 'SUPERADMIN';
+  const tenantId = isSuperAdmin ? 0 : (Number(user.tenantId) > 0 ? Number(user.tenantId) : 1);
 
   return jwt.sign(
     {
@@ -128,11 +129,12 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
 
     await ensureSaasControlPlane();
 
-    const expectedJwtTenantId = Number(decoded.tenantId) > 0 ? Number(decoded.tenantId) : 1;
+    const isJwtSuperAdmin = String(decoded.role || '').toUpperCase() === 'SUPERADMIN';
+    const expectedJwtTenantId = isJwtSuperAdmin ? 0 : (Number(decoded.tenantId) > 0 ? Number(decoded.tenantId) : 1);
     const userRes = await pgClient.query<any>(
       `SELECT id, tenant_id, name, email, phone, avatar_url, role, status
        FROM users
-       WHERE id = $1 AND (UPPER(role) = 'SUPERADMIN' OR COALESCE(tenant_id, 1) = $2)
+       WHERE id = $1 AND (UPPER(role) = 'SUPERADMIN' OR tenant_id = $2)
        LIMIT 1`,
       [decoded.id, expectedJwtTenantId]
     );
@@ -161,16 +163,13 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     }
 
     let resolvedTenantId =
-      Number.isInteger(rowTid) && rowTid > 0
-        ? rowTid
-        : Number.isInteger(jwtTid) && jwtTid > 0
-        ? jwtTid
-        : 1;
-
-    // A SuperAdmin may optionally operate with an explicit tenantId selector.
-    if (resolvedRole === 'SUPERADMIN' && Number.isInteger(activeRouteTid) && activeRouteTid > 0) {
-      resolvedTenantId = activeRouteTid;
-    }
+      resolvedRole === 'SUPERADMIN'
+        ? (Number.isInteger(activeRouteTid) && activeRouteTid > 0 ? activeRouteTid : 0)
+        : (Number.isInteger(rowTid) && rowTid > 0
+            ? rowTid
+            : Number.isInteger(jwtTid) && jwtTid > 0
+            ? jwtTid
+            : 1);
 
     // Real-time tenant suspension and subscription expiry enforcement (except for global SUPERADMIN)
     if (resolvedRole !== 'SUPERADMIN') {

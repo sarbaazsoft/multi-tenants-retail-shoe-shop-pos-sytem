@@ -289,7 +289,9 @@ async function handleStoreOrPlatformLogin(req: Request, res: Response) {
     const isSuperAdminRole = String(user.role).toUpperCase() === 'SUPERADMIN';
     const isStoreAdminRole = String(user.role).toUpperCase() === 'ADMIN';
     const tenantId =
-      !isSuperAdminRole && resolvedTenantRow?.id
+      isSuperAdminRole
+        ? 0
+        : resolvedTenantRow?.id
         ? Number(resolvedTenantRow.id)
         : Number.isInteger(parsedTid) && parsedTid > 0
         ? parsedTid
@@ -454,11 +456,12 @@ router.post('/register', handleStoreRegister);
 // Get current user profile
 router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userTenantId = Number(req.user!.tenantId) > 0 ? Number(req.user!.tenantId) : 1;
+    const isSuperAdmin = String(req.user!.role).toUpperCase() === 'SUPERADMIN';
+    const userTenantId = isSuperAdmin ? 0 : (Number(req.user!.tenantId) > 0 ? Number(req.user!.tenantId) : 1);
     const userRes = await pgClient.query(
       `SELECT id, tenant_id, name, email, phone, avatar_url, role, status
        FROM users
-       WHERE id = $1 AND (UPPER(role) = 'SUPERADMIN' OR COALESCE(tenant_id, 1) = $2)`,
+       WHERE id = $1 AND (UPPER(role) = 'SUPERADMIN' OR tenant_id = $2)`,
       [req.user!.id, userTenantId]
     );
     if (userRes.rows.length === 0) {
@@ -466,7 +469,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
     }
     const row: any = userRes.rows[0];
     const rowTid = Number(row.tenant_id);
-    const effectiveTid = req.user!.tenantId || (Number.isInteger(rowTid) && rowTid > 0 ? rowTid : 1);
+    const effectiveTid = isSuperAdmin ? 0 : (req.user!.tenantId || (Number.isInteger(rowTid) && rowTid > 0 ? rowTid : 1));
     let onboardingCompleted = true;
     if (String(row.role).toUpperCase() !== 'SUPERADMIN') {
       const tRes = await pgClient.query<{ onboarding_completed: boolean }>(
@@ -510,11 +513,12 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     const trimmedPhone = typeof phone === 'string' ? phone.trim() : '';
     const sanitizedAvatarUrl = typeof avatarUrl === 'string' ? avatarUrl.trim() : (req.user?.avatarUrl || '');
 
-    const userTenantId = Number(req.user!.tenantId) > 0 ? Number(req.user!.tenantId) : 1;
+    const isSuperAdmin = String(req.user!.role).toUpperCase() === 'SUPERADMIN';
+    const userTenantId = isSuperAdmin ? 0 : (Number(req.user!.tenantId) > 0 ? Number(req.user!.tenantId) : 1);
     const result = await pgClient.query(
       `UPDATE users
        SET name = $1, phone = $2, avatar_url = $3, updated_at = NOW()
-       WHERE id = $4 AND (UPPER(role) = 'SUPERADMIN' OR COALESCE(tenant_id, 1) = $5)
+       WHERE id = $4 AND (UPPER(role) = 'SUPERADMIN' OR tenant_id = $5)
        RETURNING id, tenant_id, name, email, phone, avatar_url, role, status`,
       [trimmedName, trimmedPhone, sanitizedAvatarUrl, userId, userTenantId]
     );
@@ -527,7 +531,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
     const rowTid = Number(row.tenant_id);
     const updatedUser: AuthUser = {
       id: row.id,
-      tenantId: req.user!.tenantId || (Number.isInteger(rowTid) && rowTid > 0 ? rowTid : 1),
+      tenantId: isSuperAdmin ? 0 : (req.user!.tenantId || (Number.isInteger(rowTid) && rowTid > 0 ? rowTid : 1)),
       name: row.name,
       email: row.email,
       phone: row.phone || '',
@@ -570,15 +574,16 @@ router.put('/change-password', requireAuth, async (req: AuthenticatedRequest, re
       return res.status(400).json({ error: 'New password and confirm password do not match.' });
     }
 
-    const userTenantId = Number(req.user!.tenantId) > 0 ? Number(req.user!.tenantId) : 1;
+    const isSuperAdmin = String(req.user!.role).toUpperCase() === 'SUPERADMIN';
+    const userTenantId = isSuperAdmin ? 0 : (Number(req.user!.tenantId) > 0 ? Number(req.user!.tenantId) : 1);
     const userRes = await pgClient.query(
       `SELECT password_hash, tenant_id, role
        FROM users
-       WHERE id = $1 AND (UPPER(role) = 'SUPERADMIN' OR COALESCE(tenant_id, 1) = $2)`,
+       WHERE id = $1 AND (UPPER(role) = 'SUPERADMIN' OR tenant_id = $2)`,
       [userId, userTenantId]
     );
     if (userRes.rows.length === 0) {
-      return res.status(404).json({ error: 'User account not found in this store.' });
+      return res.status(404).json({ error: 'User account not found.' });
     }
 
     const user: any = userRes.rows[0];
@@ -591,7 +596,7 @@ router.put('/change-password', requireAuth, async (req: AuthenticatedRequest, re
     await pgClient.query(
       `UPDATE users
        SET password_hash = $1, quick_password = $2, updated_at = NOW()
-       WHERE id = $3 AND (UPPER(role) = 'SUPERADMIN' OR COALESCE(tenant_id, 1) = $4)`,
+       WHERE id = $3 AND (UPPER(role) = 'SUPERADMIN' OR tenant_id = $4)`,
       [newHash, newPassword, userId, userTenantId]
     );
 
@@ -658,9 +663,10 @@ const handleSendPasswordResetLink = async (req: Request, res: Response) => {
       });
     }
 
+    const isSuperAdmin = String(user.role || '').toUpperCase() === 'SUPERADMIN';
     const resetToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-    const userTid = Number(user.tenant_id) > 0 ? Number(user.tenant_id) : 1;
+    const userTid = isSuperAdmin ? 0 : (Number(user.tenant_id) > 0 ? Number(user.tenant_id) : 1);
 
     await pgClient.query(
       'DELETE FROM password_reset_tokens WHERE user_id = $1',
@@ -676,9 +682,7 @@ const handleSendPasswordResetLink = async (req: Request, res: Response) => {
       (typeof origin === 'string' && origin.trim().startsWith('http') ? origin.trim() : '') ||
       (typeof req.headers.origin === 'string' && req.headers.origin.startsWith('http') ? req.headers.origin : '') ||
       `${req.protocol}://${req.get('host')}`;
-
-    const isSuperAdmin = String(user.role || '').toUpperCase() === 'SUPERADMIN';
-    let storeName = isSuperAdmin ? 'POS SaaS C-Panel' : 'ShoePOS Terminal';
+    let storeName = isSuperAdmin ? 'POS SaaS C-Panel | SarbaazSoft' : 'SarbaazSoft POS';
     if (!isSuperAdmin && userTid > 0) {
       const tRes = await pgClient
         .query<{ name: string }>('SELECT name FROM tenants WHERE id = $1 LIMIT 1', [userTid])
@@ -753,12 +757,13 @@ router.get('/verify-reset-token', async (req: Request, res: Response) => {
       return res.status(410).json({ valid: false, error: 'This password reset link has expired. Please request a new one.' });
     }
 
+    const isSuperAdmin = String(row.role || '').toUpperCase() === 'SUPERADMIN';
     return res.json({
       valid: true,
       email: row.email,
       name: row.name,
       role: row.role,
-      tenantId: Number(row.tenant_id) || 1,
+      tenantId: isSuperAdmin ? 0 : (Number(row.tenant_id) || 1),
       expiresAt: row.expires_at,
     });
   } catch (err: any) {

@@ -1082,7 +1082,8 @@ export async function getNextTenantId(): Promise<number> {
     const statsRes = await pgClient.query<{ cnt: number; max_id: number }>(
       `SELECT COUNT(*)::int AS cnt,
               COALESCE(MAX(id), 0)::int AS max_id
-       FROM tenants`
+       FROM tenants
+       WHERE id > 0`
     );
     const cnt = Number(statsRes.rows[0]?.cnt || 0);
     const maxId = Number(statsRes.rows[0]?.max_id || 0);
@@ -1111,7 +1112,7 @@ export async function getNextTenantId(): Promise<number> {
     return Number(gapRes.rows[0]?.next_id || cnt + 1);
   } catch (_) {
     const fallbackRes = await pgClient.query<{ next_id: string }>(
-      'SELECT (COALESCE(MAX(id), 0) + 1)::text AS next_id FROM tenants'
+      'SELECT (COALESCE(MAX(id), 0) + 1)::text AS next_id FROM tenants WHERE id > 0'
     );
     return parseInt(fallbackRes.rows[0]?.next_id || '1', 10);
   }
@@ -1209,8 +1210,8 @@ async function provisionNewTenantStore(params: {
     .query(
       `SELECT setval(
          pg_get_serial_sequence('tenants', 'id'),
-         COALESCE((SELECT MAX(id) FROM tenants), 1),
-         (SELECT EXISTS (SELECT 1 FROM tenants))
+         COALESCE((SELECT MAX(id) FROM tenants WHERE id > 0), 1),
+         (SELECT EXISTS (SELECT 1 FROM tenants WHERE id > 0))
        )`
     )
     .catch(() => {});
@@ -1676,8 +1677,8 @@ async function handleDeleteTenantStore(req: AuthenticatedRequest, res: Response)
       .query(
         `SELECT setval(
            pg_get_serial_sequence('tenants', 'id'),
-           COALESCE((SELECT MAX(id) FROM tenants), 1),
-           (SELECT EXISTS (SELECT 1 FROM tenants))
+           COALESCE((SELECT MAX(id) FROM tenants WHERE id > 0), 1),
+           (SELECT EXISTS (SELECT 1 FROM tenants WHERE id > 0))
          )`
       )
       .catch(() => {});

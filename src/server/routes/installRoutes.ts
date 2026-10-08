@@ -316,11 +316,14 @@ router.post(['/bootstrap', '/install-platform'], async (req: Request, res: Respo
       const passwordHash = await bcrypt.hash(password, 12);
       await pgClient.query(
         `INSERT INTO users (tenant_id, name, email, phone, password_hash, quick_password, role, status, active)
-         VALUES (1, $1, $2, $3, $4, $5, 'SUPERADMIN', 'APPROVED', true)`,
+         VALUES (0, $1, $2, $3, $4, $5, 'SUPERADMIN', 'APPROVED', true)`,
         [name, email, phone, passwordHash, password]
       );
-    } else if (phone) {
-      await pgClient.query(`UPDATE users SET phone = $1 WHERE id = $2`, [phone, superadmins.rows[0].id]);
+    } else {
+      await pgClient.query(
+        `UPDATE users SET tenant_id = 0, phone = COALESCE(NULLIF($1, ''), phone) WHERE id = $2`,
+        [phone || '', superadmins.rows[0].id]
+      );
     }
 
     // 4. Record schema initialization markers so control-plane startup knows the schema is ready

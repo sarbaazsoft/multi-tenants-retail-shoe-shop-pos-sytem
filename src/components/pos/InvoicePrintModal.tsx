@@ -659,6 +659,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               <div className="pt-3 text-center space-y-1.5">
                 <p className="text-[10px] text-gray-600 italic px-2">{invoiceFooter}</p>
                 <p className="text-[9px] text-gray-400">*** KEEP THIS RECEIPT FOR RETURNS ***</p>
+                <p className="text-[8.5px] text-gray-400 pt-1 border-t border-gray-100">Powered by SarbaazSoft POS</p>
               </div>
             </div>
           ) : (
@@ -769,6 +770,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               <div className="mt-8 pt-6 border-t border-gray-200 flex justify-between items-end">
                 <div>
                   <p className="text-[10px] text-gray-500 max-w-sm">{invoiceFooter}</p>
+                  <p className="text-[9px] text-gray-400 mt-2">Powered by SarbaazSoft POS</p>
                 </div>
                 <div className="text-center">
                   <div className="w-36 border-b border-gray-400 pb-1 mb-1"></div>
@@ -883,6 +885,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             <div style={{ textAlign: 'center', paddingTop: '8px', color: '#000000' }}>
               <div style={{ fontSize: '10px', fontStyle: 'italic', color: '#333333' }}>{invoiceFooter}</div>
               <div style={{ fontSize: '9px', color: '#666666', marginTop: '4px' }}>*** KEEP THIS RECEIPT FOR RETURNS ***</div>
+              <div style={{ fontSize: '8px', color: '#888888', marginTop: '4px', borderTop: '1px dashed #ccc', paddingTop: '3px' }}>Powered by SarbaazSoft POS</div>
             </div>
           </div>
         ) : (
@@ -981,6 +984,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             <div style={{ marginTop: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', color: '#000000' }}>
               <div>
                 <div style={{ fontSize: '10px' }}>{invoiceFooter}</div>
+                <div style={{ fontSize: '8.5px', color: '#666666', marginTop: '6px' }}>Powered by SarbaazSoft POS</div>
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ width: '150px', borderBottom: '1px solid #000', marginBottom: '4px' }}></div>

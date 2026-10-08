@@ -123,10 +123,10 @@ export const InstallationWizard: React.FC<InstallationWizardProps> = ({ onComple
 
   return (
     <PublicLayout
-      storeName="Shoe Shop POS Setup"
+      storeName="SarbaazSoft POS Setup"
       badgeText={status?.dbReady ? 'Setup required' : 'Database connection'}
       badgeVariant={status?.dbReady ? 'wizard' : 'connecting'}
-      subtitle="Initial platform installation"
+      subtitle="SarbaazSoft POS Initial Platform Setup"
       dbText="Secure PostgreSQL setup"
     >
       <motion.section

@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "StepSync POS",
-  "short_name": "StepSync",
-  "description": "Multi-Store Retail POS Terminal, Inventory, Barcode Scanner, and Purchasing System.",
+  "name": "SarbaazSoft POS",
+  "short_name": "SarbaazSoft POS",
+  "description": "Multi-tenant retail shoe shop POS and inventory management system",
   "theme_color": "#2563EB",
   "background_color": "#ffffff",
   "display": "standalone",

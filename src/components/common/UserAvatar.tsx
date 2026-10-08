@@ -83,9 +83,15 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
 
       {showRoleBadge && (
         <span
-          title={isAdmin ? 'Store Owner (Admin)' : 'Staff / Cashier'}
+          title={
+            role?.toUpperCase() === 'SUPERADMIN'
+              ? 'Platform Owner (SuperAdmin)'
+              : isAdmin
+              ? 'Store Owner (Admin)'
+              : 'Staff / Cashier'
+          }
           className={`absolute rounded-full border-2 border-white ring-1 ring-black/10 ${currentSize.badge} ${
-            isAdmin ? 'bg-amber-500' : 'bg-blue-600'
+            role?.toUpperCase() === 'SUPERADMIN' ? 'bg-purple-600' : isAdmin ? 'bg-amber-500' : 'bg-blue-600'
           }`}
         />
       )}

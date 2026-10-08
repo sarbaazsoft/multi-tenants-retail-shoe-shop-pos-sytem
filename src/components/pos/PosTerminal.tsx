@@ -2164,7 +2164,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 
     {/* Dedicated Footer Branding */}
     <div className="text-center py-2 text-[11px] text-slate-400 dark:text-slate-500 select-none">
-      Designed &amp; Developed by <span className="text-slate-700 dark:text-slate-200 font-semibold">SarbaazSoft</span> © 2026
+      Powered by <span className="text-slate-700 dark:text-slate-200 font-semibold">SarbaazSoft POS</span> &bull; &copy; 2026 SarbaazSoft
     </div>
 
       {/* ADMIN OVERRIDE MODAL FOR MIN SALE PRICE VIOLATION */}

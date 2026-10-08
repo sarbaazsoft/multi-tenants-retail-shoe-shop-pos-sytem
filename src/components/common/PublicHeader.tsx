@@ -16,10 +16,10 @@ export interface PublicHeaderProps {
  * Offers consistent backdrop blur, store branding, live status, and 3-way dark/light/system theme switching.
  */
 export const PublicHeader: React.FC<PublicHeaderProps> = ({
-  storeName = 'Shoe Shop POS',
+  storeName = 'SarbaazSoft POS',
   badgeText = 'Terminal Online',
   badgeVariant = 'online',
-  subtitle = 'Footwear Retail POS & Inventory Suite',
+  subtitle = 'Multi-Tenant Shoe POS & Inventory',
   dbText = 'PostgreSQL 16 • Online',
 }) => {
 

@@ -194,7 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {storeName}
                 </h1>
                 <p className="text-[10px] text-slate-500 dark:text-indigo-200/70 font-medium truncate mt-0.5">
-                  Retail Management System
+                  SarbaazSoft POS
                 </p>
               </div>
             )}
@@ -528,7 +528,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {/* Version */}
             {!collapsed && (
               <div className="px-2 pt-1 border-t border-indigo-500/15 flex items-center justify-between text-[9.5px] text-slate-400 dark:text-slate-500">
-                <span>Retail Shoe POS</span>
+                <span>SarbaazSoft POS</span>
                 <span className="font-mono">v1.0.0</span>
               </div>
             )}

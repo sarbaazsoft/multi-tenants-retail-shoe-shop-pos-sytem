@@ -64,7 +64,7 @@ const mockStore: Record<string, any[]> = {
   users: [
     {
       id: 1,
-      tenant_id: 1,
+      tenant_id: 0,
       name: 'Platform SuperAdmin',
       email: 'superadmin@stepsync.com',
       phone: '+923000000000',

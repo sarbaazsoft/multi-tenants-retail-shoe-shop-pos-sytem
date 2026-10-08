@@ -8,10 +8,11 @@ export interface PublicFooterProps {
 /**
  * PublicFooter
  * Global footer for public, onboarding, loading, and authentication views.
+ * Reflects official SarbaazSoft SaaS provider branding & tenant separation.
  */
 export const PublicFooter: React.FC<PublicFooterProps> = ({
-  storeName = 'Shoe Shop POS',
-  subtitle = 'Footwear Retail POS & Inventory Suite',
+  storeName,
+  subtitle,
 }) => {
   return (
     <footer
@@ -20,11 +21,27 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
     >
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-900 dark:text-white">
-            &copy; {new Date().getFullYear()} {storeName}
-          </span>
-          <span className="text-slate-300 dark:text-slate-600">&bull;</span>
-          <span className="text-slate-600 dark:text-slate-300 font-medium">{subtitle}</span>
+          {storeName ? (
+            <>
+              <span className="font-bold text-slate-900 dark:text-white">
+                {storeName}
+              </span>
+              <span className="text-slate-300 dark:text-slate-600">&bull;</span>
+              <span className="text-slate-600 dark:text-slate-300 font-medium">
+                Powered by <span className="font-semibold text-slate-900 dark:text-white">SarbaazSoft POS</span>
+              </span>
+            </>
+          ) : (
+            <span className="font-bold text-slate-900 dark:text-white">
+              SarbaazSoft POS
+            </span>
+          )}
+          {subtitle && (
+            <>
+              <span className="text-slate-300 dark:text-slate-600">&bull;</span>
+              <span className="text-slate-500 dark:text-slate-400 font-medium">{subtitle}</span>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-4 text-xs font-medium">
@@ -34,7 +51,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
           </span>
           <span className="text-slate-300 dark:text-slate-600">&bull;</span>
           <span className="text-slate-500 dark:text-slate-400">
-            Engineered by{' '}
+            &copy; 2026{' '}
             <a
               id="sarbaazsoft-credit-link"
               href="https://portpolio-eight-pi.vercel.app/"
@@ -44,6 +61,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({
             >
               SarbaazSoft
             </a>
+            . All rights reserved.
           </span>
         </div>
       </div>

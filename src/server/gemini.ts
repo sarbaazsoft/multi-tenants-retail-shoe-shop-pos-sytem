@@ -57,7 +57,7 @@ export async function resolveImageToPart(imageSource: string): Promise<ImagePart
       const response = await fetch(trimmed, {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'Mozilla/5.0 ShoePOS/2.0',
+          'User-Agent': 'Mozilla/5.0 SarbaazSoftPOS/2.0',
         },
       });
       clearTimeout(timeoutId);
