@@ -23,6 +23,7 @@ import {
   Loader2,
   DollarSign,
   Sparkles,
+  MessageCircle,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { PublicFooter } from '../common/PublicFooter';
@@ -31,11 +32,19 @@ import type { TenantInfo } from '../../types';
 import shoeStoreBg from '../../assets/images/shoe_store_blurred_bg_1790706924465.jpg';
 import posShowcase from '../../assets/images/pos-showcase.svg';
 
+const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+  </svg>
+);
+
 interface PublicStats {
   stores: number;
   products: number;
   invoicesToday: number;
   platformRevenue: number;
+  superAdminEmail?: string;
+  superAdminPhone?: string;
 }
 
 const AnimatedCounter: React.FC<{
@@ -79,6 +88,9 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
   const [activeNav, setActiveNav] = useState<'home' | 'features' | 'stores' | 'pricing' | 'about'>('home');
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [publicStats, setPublicStats] = useState<PublicStats | null>(null);
+  const [platformOwnerEmail, setPlatformOwnerEmail] = useState<string>('');
+  const [platformOwnerPhone, setPlatformOwnerPhone] = useState<string>('');
+  const [platformOwnerName, setPlatformOwnerName] = useState<string>('');
   const [storeDirectory, setStoreDirectory] = useState(availableTenants);
   const [statsInView, setStatsInView] = useState(false);
   const [statsAnimationStartTime, setStatsAnimationStartTime] = useState<number | null>(null);
@@ -89,11 +101,30 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
     let isMounted = true;
     api.saas.getPublicStats()
       .then((stats) => {
-        if (isMounted) setPublicStats(stats);
+        if (isMounted) {
+          setPublicStats(stats);
+          if (stats.superAdminEmail) {
+            setPlatformOwnerEmail(stats.superAdminEmail);
+          }
+          if (stats.superAdminPhone) {
+            setPlatformOwnerPhone(stats.superAdminPhone);
+          }
+        }
       })
       .catch(() => {
         // Keep the counters blank when live totals cannot be loaded; never show invented figures.
       });
+
+    api.saas.getPlatformOwner()
+      .then((owner) => {
+        if (isMounted) {
+          if (owner?.email) setPlatformOwnerEmail(owner.email);
+          if (owner?.phone) setPlatformOwnerPhone(owner.phone);
+          if (owner?.name) setPlatformOwnerName(owner.name);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       isMounted = false;
     };
@@ -211,6 +242,10 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<{
     message: string;
+    storeName?: string;
+    ownerEmail?: string;
+    superAdminEmail?: string;
+    superAdminPhone?: string;
   } | null>(null);
 
   // Real-time validation & email availability states
@@ -349,16 +384,30 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
       return;
     }
 
+    const requestedStoreName = toTitleCaseTrimmed(storeName);
+    const requestedOwnerEmail = toLowerTrimmed(ownerEmail);
     setSubmitting(true);
     try {
       const res = await api.saas.submitStoreRequest({
-        storeName: toTitleCaseTrimmed(storeName),
-        ownerEmail: toLowerTrimmed(ownerEmail),
+        storeName: requestedStoreName,
+        ownerEmail: requestedOwnerEmail,
         ownerPhone: ownerPhone.trim(),
         plan,
       });
+      const resolvedSuperAdminEmail = res.superAdminEmail || platformOwnerEmail;
+      const resolvedSuperAdminPhone = res.superAdminPhone || platformOwnerPhone;
+      if (res.superAdminEmail) {
+        setPlatformOwnerEmail(res.superAdminEmail);
+      }
+      if (res.superAdminPhone) {
+        setPlatformOwnerPhone(res.superAdminPhone);
+      }
       setSubmitSuccess({
         message: res.message,
+        storeName: requestedStoreName,
+        ownerEmail: requestedOwnerEmail,
+        superAdminEmail: resolvedSuperAdminEmail,
+        superAdminPhone: resolvedSuperAdminPhone,
       });
       setStoreName('');
       setOwnerEmail('');
@@ -1121,7 +1170,7 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
               <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs bg-slate-50/50 dark:bg-[#070B14]">
                 <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs space-y-3">
                   <div className="flex items-center gap-2 font-bold text-sm text-emerald-700 dark:text-emerald-300">
-                    <CheckCircle2 className="w-5 h-5" />
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                     <span>Store Request Submitted!</span>
                   </div>
                   <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
@@ -1129,32 +1178,101 @@ export const SaasLandingPage: React.FC<SaasLandingPageProps> = ({
                   </p>
                 </div>
 
-                <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900/90 dark:via-indigo-950/85 dark:to-slate-900 border-t border-gray-200 dark:border-purple-800/80 -mx-6 -mb-6 px-6 py-4 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSubmitSuccess(null);
-                      setShowRequestModal(false);
-                    }}
-                    className="btn-secondary px-4 py-2.5 text-xs font-semibold cursor-pointer"
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRequestModal(false);
-                      onOpenSuperAdmin();
-                    }}
-                    style={{ color: '#ffffff' }}
-                    className="btn-primary btn-pure-white px-5 py-2.5 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 shadow-md"
-                  >
-                    <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
-                      Open SuperAdmin C-Panel to Approve
-                    </span>
-                    <ArrowRight className="w-3.5 h-3.5 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
-                  </button>
-                </div>
+                {/* Platform Owner Approval & Verification Notice */}
+                {(() => {
+                  const activeSuperAdminEmail = submitSuccess.superAdminEmail || platformOwnerEmail || 'sarbaazsoft@gmail.com';
+                  const activeSuperAdminPhone = submitSuccess.superAdminPhone || platformOwnerPhone || '+92-321-2257340';
+                  const rawWhatsAppDigits = activeSuperAdminPhone.replace(/\D/g, '');
+                  const whatsAppPhoneDigits = rawWhatsAppDigits.startsWith('0')
+                    ? `92${rawWhatsAppDigits.slice(1)}`
+                    : rawWhatsAppDigits.startsWith('92')
+                    ? rawWhatsAppDigits
+                    : `92${rawWhatsAppDigits}`;
+                  const whatsAppMessage = `Salam! I have registered my shoe store "${submitSuccess.storeName || ''}" on SarbaazSoft POS.\n\nRegistered Owner Email: ${submitSuccess.ownerEmail || ''}\n\nPlease review and approve our store terminal.\n\nThank you!`;
+                  const whatsAppLink = `https://wa.me/${whatsAppPhoneDigits}?text=${encodeURIComponent(whatsAppMessage)}`;
+                  const emailLink = `mailto:${encodeURIComponent(activeSuperAdminEmail)}?subject=${encodeURIComponent(`Store Approval Request — ${submitSuccess.storeName || 'New Store'}`)}&body=${encodeURIComponent(`Salam,\n\nI have registered my shoe store "${submitSuccess.storeName || ''}" on SarbaazSoft POS.\n\nRegistered Owner Email: ${submitSuccess.ownerEmail || ''}\n\nPlease review and approve our store terminal.\n\nThank you!`)}`;
+
+                  return (
+                    <>
+                      <div className="bg-white dark:bg-gradient-to-b dark:from-[#131B2E]/90 dark:to-[#0A0E1A]/80 p-5 rounded-2xl border border-gray-200 dark:border-[#1A263D] shadow-xs space-y-3">
+                        <h6 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                          <span>Next Step: Platform Owner Approval</span>
+                        </h6>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                          Your store request is registered in the platform verification queue. Please contact the platform owner via WhatsApp or Email for instant verification and terminal activation.
+                        </p>
+                        <div className="p-3.5 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200/80 dark:border-purple-800/60 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500 dark:text-slate-400 font-medium">SaaS Platform:</span>
+                            <span className="font-bold text-slate-900 dark:text-white">SarbaazSoft</span>
+                          </div>
+                          {platformOwnerName && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 dark:text-slate-400 font-medium">Platform Owner:</span>
+                              <span className="font-bold text-slate-900 dark:text-white">{platformOwnerName}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500 dark:text-slate-400 font-medium">SuperAdmin Email:</span>
+                            <span className="font-mono font-bold text-purple-700 dark:text-purple-300">
+                              {activeSuperAdminEmail}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500 dark:text-slate-400 font-medium">WhatsApp / Phone:</span>
+                            <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                              <WhatsAppIcon className="w-3.5 h-3.5 fill-emerald-600 dark:fill-emerald-400" />
+                              <span>{activeSuperAdminPhone}</span>
+                            </span>
+                          </div>
+                          {submitSuccess.storeName && (
+                            <div className="flex items-center justify-between pt-1 border-t border-purple-200/60 dark:border-purple-800/40">
+                              <span className="text-slate-500 dark:text-slate-400 font-medium">Requested Store:</span>
+                              <span className="font-bold text-slate-900 dark:text-white">{submitSuccess.storeName}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 dark:bg-gradient-to-r dark:from-purple-900/90 dark:via-indigo-950/85 dark:to-slate-900 border-t border-gray-200 dark:border-purple-800/80 -mx-6 -mb-6 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSubmitSuccess(null);
+                            setShowRequestModal(false);
+                          }}
+                          className="btn-secondary w-full sm:w-auto px-4 py-2.5 text-xs font-semibold cursor-pointer order-3 sm:order-1"
+                        >
+                          Close
+                        </button>
+
+                        <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto order-1 sm:order-2">
+                          <a
+                            href={whatsAppLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full sm:w-auto bg-[#25D366] hover:bg-[#20ba5a] text-white font-bold px-4 py-2.5 text-xs rounded-xl shadow-md inline-flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95"
+                          >
+                            <WhatsAppIcon className="w-4 h-4 fill-white" />
+                            <span>Contact via WhatsApp</span>
+                          </a>
+
+                          <a
+                            href={emailLink}
+                            style={{ color: '#ffffff' }}
+                            className="btn-primary btn-pure-white w-full sm:w-auto px-4 py-2.5 text-xs font-bold cursor-pointer inline-flex items-center justify-center gap-2 shadow-md"
+                          >
+                            <Mail className="w-4 h-4 !text-white" style={{ color: '#ffffff', stroke: '#ffffff' }} />
+                            <span className="!text-white text-white font-bold" style={{ color: '#ffffff' }}>
+                              Contact via Email
+                            </span>
+                          </a>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             ) : (
               <>

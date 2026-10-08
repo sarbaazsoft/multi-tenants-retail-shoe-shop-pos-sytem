@@ -211,15 +211,43 @@ router.get('/saas/public-stats', async (_req: Request, res: Response) => {
         (SELECT ROUND(COALESCE(SUM(total_amount), 0))::text FROM sales) AS platform_revenue,
         (SELECT COUNT(*)::text FROM sales WHERE sale_date = CURRENT_DATE::text) AS invoices_today_count
     `);
+    const superAdminRes = await pgClient.query<{ email: string; phone?: string }>(
+      `SELECT email, phone FROM users WHERE UPPER(BTRIM(role)) = 'SUPERADMIN' AND active = true ORDER BY id ASC LIMIT 1`
+    );
     const stats = statsRes.rows[0];
+    const superAdminEmail = superAdminRes.rows[0]?.email || '';
+    const superAdminPhone = superAdminRes.rows[0]?.phone || '+92-321-2257340';
     return res.json({
       stores: Number(stats.store_count),
       products: Number(stats.product_count),
       platformRevenue: Number(stats.platform_revenue),
       invoicesToday: Number(stats.invoices_today_count),
+      superAdminEmail,
+      superAdminPhone,
     });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to load public statistics: ' + err.message });
+  }
+});
+
+/**
+ * 2A2. PUBLIC PLATFORM OWNER INFO (`GET /api/saas/platform-owner`)
+ * Dynamically retrieves the SuperAdmin email and name from `users` where role = 'SUPERADMIN'.
+ */
+router.get('/saas/platform-owner', async (_req: Request, res: Response) => {
+  try {
+    await ensureSaasControlPlane();
+    const superAdminRes = await pgClient.query<{ name: string; email: string; phone?: string }>(
+      `SELECT name, email, phone FROM users WHERE UPPER(BTRIM(role)) = 'SUPERADMIN' AND active = true ORDER BY id ASC LIMIT 1`
+    );
+    const admin = superAdminRes.rows[0];
+    return res.json({
+      name: admin?.name || 'Platform SuperAdmin',
+      email: admin?.email || '',
+      phone: admin?.phone || '+92-321-2257340',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to retrieve platform owner details: ' + err.message });
   }
 });
 
@@ -420,10 +448,18 @@ router.post('/saas/store-requests', async (req: Request, res: Response) => {
       }
     }
 
+    const superAdminRes = await pgClient.query<{ email: string; phone?: string }>(
+      `SELECT email, phone FROM users WHERE UPPER(BTRIM(role)) = 'SUPERADMIN' AND active = true ORDER BY id ASC LIMIT 1`
+    );
+    const superAdminEmail = superAdminRes.rows[0]?.email || '';
+    const superAdminPhone = superAdminRes.rows[0]?.phone || '+92-321-2257340';
+
     return res.status(201).json({
       success: true,
       requestId: insertRes.rows[0].id,
-      message: `Store request for '${cleanStoreName}' submitted! Our SuperAdmin team can now provision it with 1 click.`,
+      superAdminEmail,
+      superAdminPhone,
+      message: `Store registration for '${cleanStoreName}' submitted successfully! Please contact the platform owner (${superAdminEmail || 'SarbaazSoft'}) for verification and store approval.`,
     });
   } catch (err: any) {
     return res.status(500).json({ error: 'Failed to submit store request: ' + err.message });

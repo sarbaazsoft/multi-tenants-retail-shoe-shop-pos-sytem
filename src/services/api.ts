@@ -279,13 +279,26 @@ export const api = {
       products: number;
       platformRevenue: number;
       invoicesToday: number;
+      superAdminEmail?: string;
+      superAdminPhone?: string;
     }>('/saas/public-stats'),
+    getPlatformOwner: () => apiFetch<{
+      name: string;
+      email: string;
+      phone?: string;
+    }>('/saas/platform-owner'),
     submitStoreRequest: (data: {
       storeName: string;
       ownerEmail: string;
       ownerPhone?: string;
       plan?: string;
-    }) => apiFetch('/saas/store-requests', { method: 'POST', body: data }),
+    }) => apiFetch<{
+      success: boolean;
+      requestId: number;
+      superAdminEmail?: string;
+      superAdminPhone?: string;
+      message: string;
+    }>('/saas/store-requests', { method: 'POST', body: data }),
     checkEmailAvailability: (email: string) =>
       apiFetch<{
         available: boolean;

@@ -7,8 +7,6 @@ import {
   CheckCircle,
   Zap,
   Check,
-  Download,
-  Image as ImageIcon,
   MessageCircle,
   Send,
   Phone,
@@ -24,8 +22,6 @@ import {
   getSavedPrinterSettings,
 } from '../../utils/printer/printerManager.ts';
 import {
-  exportSaleToPdf,
-  exportSaleToImage,
   buildWhatsAppInvoiceText,
   buildSmsInvoiceText,
   buildWhatsAppLink,
@@ -46,11 +42,19 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   const [printFormat, setPrintFormat] = useState<'thermal' | 'a4'>('thermal');
   const [printerSettings] = useState(getSavedPrinterSettings());
   const [isPrintingDirect, setIsPrintingDirect] = useState(false);
-  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [directFeedback, setDirectFeedback] = useState<string | null>(null);
 
+  // Identify whether customer is a registered profile customer (not walk-in) with a set phone number
+  const customerName = String(sale.customer_name || sale.customer?.name || '').trim();
+  const customerPhone = String(sale.customer_phone || sale.customer?.phone || '').trim();
+  const isWalkInCustomer =
+    !customerName ||
+    /^(walk[\s-]?in(\s+customer)?|counter(\s+sale)?|cash(\s+customer)?)$/i.test(customerName);
+  const hasCustomerPhone = customerPhone.length > 0;
+  const shouldShowDigitalReceipt = !isWalkInCustomer && hasCustomerPhone;
+
   // Digital Receipt State (SMS & WhatsApp)
-  const [recipientPhone, setRecipientPhone] = useState<string>(sale.customer_phone || '');
+  const [recipientPhone, setRecipientPhone] = useState<string>(customerPhone);
   const [customNote, setCustomNote] = useState<string>('');
   const [showPreviewDrawer, setShowPreviewDrawer] = useState<boolean>(false);
   const [previewType, setPreviewType] = useState<'whatsapp' | 'sms'>('whatsapp');
@@ -110,58 +114,6 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   const handlePrintStandard = () => {
     window.print();
-  };
-
-  const handleDownloadPdf = () => {
-    setIsExportingPdf(true);
-    setDirectFeedback(null);
-    try {
-      exportSaleToPdf(sale, companySettings, printFormat);
-      setDirectFeedback('PDF downloaded successfully to your device!');
-    } catch (err: any) {
-      setDirectFeedback('Could not generate PDF: ' + (err.message || 'Unknown error'));
-    } finally {
-      setIsExportingPdf(false);
-    }
-  };
-
-  const handleDownloadImage = () => {
-    setDirectFeedback(null);
-    try {
-      exportSaleToImage(sale, companySettings);
-      setDirectFeedback('Receipt image (PNG) downloaded to your photos/gallery!');
-    } catch (err: any) {
-      setDirectFeedback('Could not save image: ' + (err.message || 'Unknown error'));
-    }
-  };
-
-  const handleWhatsAppShare = () => {
-    setDirectFeedback(`Opening WhatsApp receipt${recipientPhone ? ` for ${recipientPhone}` : ''}...`);
-    try {
-      const link = document.createElement('a');
-      link.href = whatsAppUrl;
-      link.target = '_blank';
-      link.rel = 'noopener,noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch {
-      // Fallback
-    }
-  };
-
-  const handleSmsShare = () => {
-    setDirectFeedback(`Opening SMS messenger${recipientPhone ? ` for ${recipientPhone}` : ''}...`);
-    try {
-      // Trigger native SMS client
-      const tempLink = document.createElement('a');
-      tempLink.href = smsUrl;
-      document.body.appendChild(tempLink);
-      tempLink.click();
-      document.body.removeChild(tempLink);
-    } catch {
-      window.location.href = smsUrl;
-    }
   };
 
   const handleCopyReceipt = (type: 'whatsapp' | 'sms') => {
@@ -294,47 +246,6 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            {/* Direct PDF Download Button */}
-            <button
-              onClick={handleDownloadPdf}
-              disabled={isExportingPdf}
-              className="flex items-center space-x-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg shadow-xs transition cursor-pointer"
-              title="Download clean PDF directly to your device storage"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{isExportingPdf ? 'Saving...' : 'Save PDF'}</span>
-            </button>
-
-            {/* PNG Image Download */}
-            <button
-              onClick={handleDownloadImage}
-              className="hidden sm:flex items-center space-x-1 px-2.5 py-2 bg-white dark:bg-purple-500/20 hover:bg-slate-50 dark:hover:bg-purple-500/30 text-slate-700 dark:text-purple-200 dark:hover:text-white border border-slate-300 dark:border-purple-400/40 dark:shadow-[0_0_14px_rgba(147,51,234,0.2)] text-xs font-semibold rounded-lg transition cursor-pointer"
-              title="Save as PNG image"
-            >
-              <ImageIcon className="w-3.5 h-3.5 text-slate-500 dark:text-purple-300" />
-              <span>Image</span>
-            </button>
-
-            {/* Quick WhatsApp Share Button */}
-            <button
-              onClick={handleWhatsAppShare}
-              className="flex items-center space-x-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg shadow-xs transition cursor-pointer"
-              title="Share formatted digital receipt via WhatsApp"
-            >
-              <MessageCircle className="w-3.5 h-3.5" />
-              <span>WhatsApp</span>
-            </button>
-
-            {/* Quick SMS Share Button */}
-            <button
-              onClick={handleSmsShare}
-              className="flex items-center space-x-1 px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-lg shadow-xs transition cursor-pointer"
-              title="Send digital receipt via SMS"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>SMS</span>
-            </button>
-
             {/* Direct USB Silent Print if hardware paired */}
             {printerSettings.receiptMode === 'webusb' && printerSettings.receiptDeviceName ? (
               <button
@@ -352,7 +263,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             {/* Standard Browser Print */}
             <button
               onClick={handlePrintStandard}
-              className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-900 active:bg-slate-950 text-white font-medium text-xs rounded-lg shadow-xs transition cursor-pointer"
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 active:bg-slate-950 text-white font-semibold text-xs rounded-lg shadow-xs transition cursor-pointer"
               title="Open browser print dialog (F9)"
             >
               <Printer className="w-3.5 h-3.5" />
@@ -369,8 +280,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
         </div>
 
-        {/* CUSTOMER DIGITAL RECEIPTS (SMS & WhatsApp Direct Links) */}
-        <div className="px-4 sm:px-6 py-3 bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-sky-50/90 dark:from-emerald-950/40 dark:via-[#0E2030] dark:to-sky-950/40 border-b border-emerald-200/80 dark:border-emerald-800/40">
+        {/* CUSTOMER DIGITAL RECEIPTS (SMS & WhatsApp Direct Links) - Displayed only if customer is NOT a walk-in customer AND has phone number set in profile */}
+        {shouldShowDigitalReceipt && (
+          <div className="px-4 sm:px-6 py-3 bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-sky-50/90 dark:from-emerald-950/40 dark:via-[#0E2030] dark:to-sky-950/40 border-b border-emerald-200/80 dark:border-emerald-800/40">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             {/* Label & Customer Identification */}
             <div className="flex items-center space-x-2.5">
@@ -549,7 +461,8 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               </div>
             </div>
           )}
-        </div>
+          </div>
+        )}
 
         {directFeedback && (
           <div className="px-6 py-2.5 bg-slate-900 text-emerald-300 text-xs flex items-center justify-between">
